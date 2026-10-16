@@ -448,6 +448,16 @@
               </select>
             </div>
             <div class="form-group">
+              <label>Rombel</label>
+              <select id="nilai-rombel-sel">
+                <option value="">Semua Rombel</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
+              </select>
+            </div>
+            <div class="form-group">
               <label>Semester</label>
               <select id="nilai-semester-sel">
                 <option value="Ganjil">Ganjil</option>
@@ -606,13 +616,12 @@
                 <tr>
                   <th style="width:40px">No</th>
                   <th>Nama Mata Pelajaran</th>
-                  <th>Guru Pengampu</th>
-                  <th style="width:80px">KKM</th>
+                  <th style="width:100px">KKM</th>
                   <th style="width:60px">Hapus</th>
                 </tr>
               </thead>
               <tbody id="mapel-tbody">
-                <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gray-500)">
+                <tr><td colspan="4" style="text-align:center;padding:24px;color:var(--gray-500)">
                   Memuat data...
                 </td></tr>
               </tbody>
@@ -765,6 +774,16 @@
               <label>Kelas</label>
               <select id="cetak-kelas-sel" onchange="populateCetakSiswaOptions()">
                 <option value="">Semua Kelas</option>
+              </select>
+            </div>
+            <div class="form-group" style="min-width:110px">
+              <label>Rombel</label>
+              <select id="cetak-rombel-sel" onchange="populateCetakSiswaOptions()">
+                <option value="">Semua</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
               </select>
             </div>
             <div class="form-group" style="flex:1;min-width:240px">
@@ -1032,6 +1051,16 @@
             </select>
           </div>
           <div class="form-group">
+            <label>Rombel (Rombongan Belajar)</label>
+            <input type="text" name="siswa-rombel" id="siswa-rombel" placeholder="Contoh: A atau B" list="rombel-datalist" />
+            <datalist id="rombel-datalist">
+              <option value="A"></option>
+              <option value="B"></option>
+              <option value="C"></option>
+              <option value="D"></option>
+            </datalist>
+          </div>
+          <div class="form-group">
             <label>Tempat Lahir</label>
             <input type="text" name="siswa-tl" placeholder="Kota tempat lahir" />
           </div>
@@ -1124,7 +1153,7 @@
                  onchange="handleExcelFile(this.files[0])" />
         </label>
         <p class="excel-drop-sub" style="margin-top:12px;font-size:0.75rem">
-          Format: <code>No | Nama Lengkap | NISN | NIS | Tempat Lahir | Tanggal Lahir | Kelas | Jenjang</code>
+          Format: <code>No | Nama Lengkap | NISN | NIS | Tempat Lahir | Tanggal Lahir | Kelas | Rombel | Jenjang</code>
         </p>
       </div>
 
@@ -1139,7 +1168,7 @@
             <thead>
               <tr>
                 <th>No</th><th>Nama Lengkap</th><th>NISN</th><th>NIS</th>
-                <th>Tempat Lahir</th><th>Tgl Lahir</th><th>Kelas</th><th>Jenjang</th>
+                <th>Tempat Lahir</th><th>Tgl Lahir</th><th>Kelas</th><th>Rombel</th><th>Jenjang</th>
               </tr>
             </thead>
             <tbody id="excel-preview-tbody"></tbody>
@@ -1196,6 +1225,34 @@
               <option value="aktif">Aktif</option>
               <option value="nonaktif">Non-Aktif</option>
             </select>
+          </div>
+          <div class="form-group full-width">
+            <label>Penugasan Wali Kelas (Opsional)</label>
+            <input type="text" name="akun-wali-kelas" id="akun-wali-kelas-input" list="akun-wali-kelas-datalist" placeholder="Contoh: 1 A, 1 B, atau 7 A (kosongkan jika bukan wali kelas)" />
+            <datalist id="akun-wali-kelas-datalist">
+              <option value="1 A"></option>
+              <option value="1 B"></option>
+              <option value="2 A"></option>
+              <option value="2 B"></option>
+              <option value="3 A"></option>
+              <option value="3 B"></option>
+              <option value="4 A"></option>
+              <option value="4 B"></option>
+              <option value="5 A"></option>
+              <option value="5 B"></option>
+              <option value="6 A"></option>
+              <option value="6 B"></option>
+              <option value="7 A"></option>
+              <option value="7 B"></option>
+              <option value="8 A"></option>
+              <option value="8 B"></option>
+              <option value="9 A"></option>
+              <option value="9 B"></option>
+              <option value="10 A"></option>
+              <option value="11 A"></option>
+              <option value="12 A"></option>
+            </datalist>
+            <small style="color:var(--gray-500);font-size:0.75rem">Wali kelas langsung dapat menginput semua mata pelajaran di kelas ini</small>
           </div>
           <div class="form-group" id="akun-password-group">
             <label>Password *</label>

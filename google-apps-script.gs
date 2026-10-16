@@ -72,13 +72,13 @@ function getSheet(name) {
     sheet = ss.insertSheet(name);
     // Initialize headers
     const headers = {
-      [SHEETS.SISWA]:  ['id','nama','nis','jenjang','kelas','alamat','namaWali','waliKelas','tempatLahir','tanggalLahir','jenisKelamin','createdAt','updatedAt'],
+      [SHEETS.SISWA]:  ['id','nama','nis','jenjang','kelas','rombel','alamat','namaWali','waliKelas','tempatLahir','tanggalLahir','jenisKelamin','createdAt','updatedAt'],
       [SHEETS.NILAI]:  ['id','siswaId','mapelId','mapelNama','guru','nilai','jenjang','kelas','semester','tahunAjaran','updatedAt'],
-      [SHEETS.MAPEL]:  ['id','jenjang','nama','urutan','guru','kkm'],
-      [SHEETS.GURU]:   ['id','nama','nip','mapelAmpu','telepon','alamat'],
+      [SHEETS.MAPEL]:  ['id','jenjang','nama','urutan','kkm'],
+      [SHEETS.GURU]:   ['id','nama','nip','telepon','alamat','waliKelas'],
       [SHEETS.KEPALA]: ['id','nama','nip','jabatan','ttdUrl'],
       [SHEETS.KELAS]:  ['id','nama','jenjang'],
-      [SHEETS.AKUN]:   ['id','username','namaGuru','role','passwordHash','aktif','createdAt','updatedAt'],
+      [SHEETS.AKUN]:   ['id','username','namaGuru','role','waliKelas','passwordHash','aktif','createdAt','updatedAt'],
     };
     const h = headers[name];
     if (h) {

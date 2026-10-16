@@ -360,13 +360,13 @@ function renderSiswaTable(list) {
       <td>
         <span class="badge badge-${(s.jenjang || '').toLowerCase().replace('mts','mts')}">${escHtml(s.jenjang)}</span>
       </td>
-      <td>${escHtml(s.kelas)}</td>
+      <td>${escHtml(s.kelas)}${s.rombel ? ' ' + escHtml(s.rombel) : ''}</td>
       <td>${escHtml(s.waliKelas || '-')}</td>
       <td>${escHtml(s.namaWali || '-')}</td>
       <td>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-outline btn-sm" onclick="openEditSiswa('${escHtml(s.id)}')">✏️ Edit</button>
-          <button class="btn btn-danger btn-sm" onclick="confirmDeleteSiswa('${escHtml(s.id)}', '${escHtml(s.nama)}')">🗑️</button>
+          ${Auth.isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="confirmDeleteSiswa('${escHtml(s.id)}', '${escHtml(s.nama)}')">🗑️</button>` : ''}
           <button class="btn btn-gold btn-sm" onclick="previewRaportSiswa('${escHtml(s.id)}')">📄 Raport</button>
         </div>
       </td>
@@ -395,6 +395,7 @@ async function openEditSiswa(id) {
   f['siswa-jenjang'].value  = s.jenjang  || 'MI';
   populateKelasOptions('siswa-kelas-select', s.jenjang || 'MI');
   f['siswa-kelas-select'].value  = s.kelas     || '';
+  if (f['siswa-rombel']) f['siswa-rombel'].value = s.rombel || '';
   f['siswa-alamat'].value   = s.alamat   || '';
   f['siswa-wali'].value     = s.namaWali || '';
   f['siswa-wali-kelas'].value = s.waliKelas || '';
@@ -433,6 +434,7 @@ async function saveSiswa(e) {
     nis:           f['siswa-nis'].value.trim(),
     jenjang:       f['siswa-jenjang'].value,
     kelas:         f['siswa-kelas-select'].value,
+    rombel:        (f['siswa-rombel']?.value || '').trim().toUpperCase(),
     alamat:        f['siswa-alamat'].value.trim(),
     namaWali:      f['siswa-wali'].value.trim(),
     waliKelas:     f['siswa-wali-kelas'].value.trim(),
@@ -523,15 +525,11 @@ function renderMapelForJenjang(jenjang) {
   const tbody = document.getElementById('mapel-tbody');
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gray-500)">
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--gray-500)">
       Belum ada mata pelajaran untuk jenjang ${jenjang}
     </td></tr>`;
     return;
   }
-
-  const guruOptions = State.guru.map(g =>
-    `<option value="${escHtml(g.nama)}">${escHtml(g.nama)}</option>`
-  ).join('');
 
   tbody.innerHTML = filtered.map((m, i) => `
     <tr data-mapel-id="${escHtml(m.id)}">
@@ -542,32 +540,15 @@ function renderMapelForJenjang(jenjang) {
           style="border:none;background:transparent;width:100%;font-weight:600;color:var(--gray-900)" />
       </td>
       <td>
-        <select class="mapel-guru-select"
-          onchange="updateMapelField('${escHtml(m.id)}', 'guru', this.value)"
-          style="border:1px solid var(--gray-300);width:100%">
-          <option value="">-- Pilih Guru --</option>
-          ${guruOptions}
-        </select>
-      </td>
-      <td>
         <input type="number" min="0" max="100" value="${escHtml(m.kkm ?? 70)}"
           onchange="updateMapelField('${escHtml(m.id)}', 'kkm', parseInt(this.value))"
-          class="kkm-input" />
+          class="kkm-input" style="width:70px" />
       </td>
       <td>
         <button class="btn btn-danger btn-sm btn-icon" title="Hapus" onclick="deleteMapel('${escHtml(m.id)}')">🗑️</button>
       </td>
     </tr>
   `).join('');
-
-  // Set selected guru
-  filtered.forEach(m => {
-    const row = tbody.querySelector(`[data-mapel-id="${m.id}"]`);
-    if (row && m.guru) {
-      const sel = row.querySelector('.mapel-guru-select');
-      if (sel) sel.value = m.guru;
-    }
-  });
 }
 
 async function loadGuruForMapel() {
@@ -755,6 +736,26 @@ async function renderNilaiControls() {
 
   // Populate kelas based on jenjang
   updateNilaiKelasOptions();
+
+  // Auto-select jika user yang login adalah Wali Kelas
+  const u = Auth.getUser();
+  if (u && u.waliKelas) {
+    const parts = u.waliKelas.trim().split(/\s+/);
+    if (parts.length >= 1) {
+      const kelasVal = parts[0];
+      const rombelVal = parts[1] || '';
+      const num = parseInt(kelasVal, 10);
+      if (num >= 7 && num <= 9) jenjangSel.value = 'MTs';
+      else if (num >= 10 && num <= 12) jenjangSel.value = 'MA';
+      else if (num >= 1 && num <= 6) jenjangSel.value = 'MI';
+      updateNilaiKelasOptions();
+      const kSel = document.getElementById('nilai-kelas-sel');
+      if (kSel) kSel.value = kelasVal;
+      const rSel = document.getElementById('nilai-rombel-sel');
+      if (rSel && rombelVal) rSel.value = rombelVal;
+      await loadNilaiSiswaList();
+    }
+  }
 }
 
 function updateNilaiKelasOptions() {
@@ -780,6 +781,7 @@ function updateNilaiKelasOptions() {
 async function loadNilaiSiswaList() {
   const jenjang  = document.getElementById('nilai-jenjang-sel').value;
   const kelas    = document.getElementById('nilai-kelas-sel').value;
+  const rombel   = document.getElementById('nilai-rombel-sel')?.value || '';
 
   if (!jenjang || !kelas) {
     return Toast.warning('Pilih jenjang dan kelas terlebih dahulu');
@@ -787,6 +789,7 @@ async function loadNilaiSiswaList() {
 
   State.filterNilai.jenjang  = jenjang;
   State.filterNilai.kelas    = kelas;
+  State.filterNilai.rombel   = rombel;
   State.filterNilai.semester = document.getElementById('nilai-semester-sel').value;
   State.filterNilai.tahunAjaran = document.getElementById('nilai-ta-sel').value;
 
@@ -797,10 +800,12 @@ async function loadNilaiSiswaList() {
 
     const normKelas = (str) => String(str || '').trim().toLowerCase().replace(/^kelas\s*/, '');
 
-    const siswaKelas = State.siswa.filter(s =>
-      String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase() &&
-      normKelas(s.kelas) === normKelas(kelas)
-    );
+    const siswaKelas = State.siswa.filter(s => {
+      const matchJenjang = String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase();
+      const matchKelas = normKelas(s.kelas) === normKelas(kelas);
+      const matchRombel = !rombel || String(s.rombel || '').toUpperCase() === rombel.toUpperCase();
+      return matchJenjang && matchKelas && matchRombel;
+    });
 
     renderNilaiSiswaList(siswaKelas);
   } catch (e) {
@@ -813,37 +818,40 @@ function renderNilaiSiswaList(list) {
   const panel = document.getElementById('nilai-input-panel');
   panel.style.display = 'none';
 
+  const rombelLabel = State.filterNilai.rombel ? ` Rombel ${State.filterNilai.rombel}` : '';
+
   if (!list.length) {
     container.innerHTML = `<div class="empty-state">
       <div class="empty-icon">👨‍🎓</div>
       <h3>Tidak ada siswa</h3>
-      <p>Tidak ada siswa di kelas ini. Tambahkan siswa terlebih dahulu.</p>
+      <p>Tidak ada siswa di kelas ${State.filterNilai.kelas}${rombelLabel} (${State.filterNilai.jenjang}). Tambahkan siswa terlebih dahulu.</p>
     </div>`;
     return;
   }
 
   container.innerHTML = `
     <p style="font-size:0.85rem;color:var(--gray-700);margin-bottom:12px">
-      Ditemukan <strong>${list.length}</strong> siswa di kelas ${State.filterNilai.kelas} ${State.filterNilai.jenjang}.
-      Klik nama siswa untuk mengisi nilai.
+      Ditemukan <strong>${list.length}</strong> siswa di kelas ${State.filterNilai.kelas}${rombelLabel} (${State.filterNilai.jenjang}).
+      Wali kelas dapat mengisi seluruh nilai mata pelajaran untuk siswa di bawah ini:
     </p>
     <div class="table-wrapper">
       <table>
         <thead><tr>
-          <th>No</th><th>Nama Siswa</th><th>NIS</th><th>Status Nilai</th><th>Aksi</th>
+          <th>No</th><th>Nama Siswa</th><th>NIS</th><th>Kelas / Rombel</th><th>Status Nilai</th><th>Aksi</th>
         </tr></thead>
         <tbody>
           ${list.map((s, i) => `
             <tr>
               <td>${i + 1}</td>
               <td><strong>${escHtml(s.nama)}</strong></td>
-              <td>${escHtml(s.nis)}</td>
+              <td>${escHtml(s.nis || '-')}</td>
+              <td>${escHtml(s.kelas)}${s.rombel ? ' ' + escHtml(s.rombel) : ''}</td>
               <td id="nilai-status-${escHtml(s.id)}">
                 <span style="color:var(--gray-500);font-size:0.82rem">Belum diisi</span>
               </td>
               <td>
                 <button class="btn btn-primary btn-sm" onclick="openNilaiInput('${escHtml(s.id)}')">
-                  ✏️ Isi Nilai
+                  ✏️ Isi Semua Nilai
                 </button>
               </td>
             </tr>
@@ -1129,17 +1137,19 @@ async function renderCetak() {
 function populateCetakSiswaOptions() {
   const jenjang  = document.getElementById('cetak-jenjang-sel').value;
   const kelas    = document.getElementById('cetak-kelas-sel').value;
+  const rombel   = document.getElementById('cetak-rombel-sel')?.value || '';
 
   const normKelas = (str) => String(str || '').trim().toLowerCase().replace(/^kelas\s*/, '');
 
   let list = State.siswa;
   if (jenjang) list = list.filter(s => String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase());
   if (kelas)   list = list.filter(s => normKelas(s.kelas) === normKelas(kelas));
+  if (rombel)  list = list.filter(s => String(s.rombel || '').toUpperCase() === rombel.toUpperCase());
 
   const sel = document.getElementById('cetak-siswa-sel');
   sel.innerHTML = `<option value="">-- Pilih Siswa (${list.length} siswa) --</option>` +
     list.map(s =>
-      `<option value="${escHtml(s.id)}">${escHtml(s.nama)} (${escHtml(s.nis || '-')}) - Kelas ${escHtml(s.kelas || '-')}</option>`
+      `<option value="${escHtml(s.id)}">${escHtml(s.nama)} (${escHtml(s.nis || '-')}) - Kelas ${escHtml(s.kelas || '-')}${s.rombel ? ' ' + escHtml(s.rombel) : ''}</option>`
     ).join('');
 }
 
@@ -1257,7 +1267,6 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
       <tr ${belowKkm ? 'class="below-kkm"' : ''}>
         <td class="no-col">${i + 1}</td>
         <td class="mapel-col">${escHtml(m.nama)}</td>
-        <td class="guru-col">${escHtml(m.guru || '-')}</td>
         <td class="kkm-col">${escHtml(kkm)}</td>
         <td class="angka-col" style="font-weight:700">${nilai !== '' ? escHtml(nilai) : '-'}</td>
         <td class="huruf-col">${escHtml(huruf)}</td>
@@ -1279,6 +1288,8 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
         <div class="sig-name">${escHtml(kepala?.nama || '.........................')}</div>
         <div class="sig-nip">NIP. ${escHtml(kepala?.nip || '-')}</div>
       </div>`;
+
+  const kelasLabel = `${escHtml(siswa.kelas || '')}${siswa.rombel ? ' - ' + escHtml(siswa.rombel) : ''}`;
 
   return `
     <div class="raport-doc" id="raport-document">
@@ -1311,9 +1322,9 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
             <span class="identity-value">${escHtml(siswa.nama)}</span>
           </div>
           <div class="identity-row">
-            <span class="identity-label">Kelas</span>
+            <span class="identity-label">Kelas / Rombel</span>
             <span class="identity-colon">:</span>
-            <span class="identity-value">${escHtml(siswa.kelas)}</span>
+            <span class="identity-value">${kelasLabel}</span>
           </div>
           <div class="identity-row">
             <span class="identity-label">NIS</span>
@@ -1356,7 +1367,6 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
             <tr>
               <th class="no-col">No</th>
               <th class="mapel-col">Mata Pelajaran</th>
-              <th class="guru-col">Guru Pengampu</th>
               <th class="kkm-col">KKM</th>
               <th class="angka-col">Nilai Angka</th>
               <th class="huruf-col">Nilai Huruf</th>
@@ -1366,7 +1376,7 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
           <tbody>
             ${gradesRows}
             <tr class="avg-row">
-              <td colspan="4" style="text-align:right">Rata-rata Keseluruhan</td>
+              <td colspan="3" style="text-align:right">Rata-rata Keseluruhan</td>
               <td class="angka-col">${escHtml(rataRata)}</td>
               <td colspan="2"></td>
             </tr>
@@ -1411,7 +1421,7 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
       <div class="signature-section">
         <!-- Wali Kelas -->
         <div class="sig-block">
-          <div class="sig-title">${lokasiTanggal}<br>Wali Kelas</div>
+          <div class="sig-title">${lokasiTanggal}<br>Wali Kelas ${kelasLabel}</div>
           <div class="sig-name">${escHtml(siswa.waliKelas || '.........................')}</div>
           <div class="sig-nip">NIP. -</div>
         </div>
@@ -1889,7 +1899,10 @@ async function renderAkun() {
     <tr>
       <td>${i + 1}</td>
       <td><strong>${escHtml(a.username)}</strong></td>
-      <td>${escHtml(a.namaGuru || '-')}</td>
+      <td>
+        ${escHtml(a.namaGuru || '-')}
+        ${a.waliKelas ? `<br><span style="font-size:0.75rem;background:#eaf2f8;color:#1a5276;padding:2px 6px;border-radius:4px;font-weight:600">Wali Kelas: ${escHtml(a.waliKelas)}</span>` : ''}
+      </td>
       <td><span class="badge badge-${escHtml(a.role)}">${escHtml(a.role === 'admin' ? 'Admin' : 'Guru')}</span></td>
       <td><span class="badge badge-${a.aktif ? 'aktif' : 'nonaktif'}">${a.aktif ? 'Aktif' : 'Non-Aktif'}</span></td>
       <td>
@@ -1914,6 +1927,7 @@ async function openAddAkun() {
   document.getElementById('akun-konfirmasi-group').style.display = '';
   document.getElementById('akun-ganti-password-wrap').style.display = 'none';
   f['akun-username'].readOnly = false;
+  if (f['akun-wali-kelas']) f['akun-wali-kelas'].value = '';
 
   // Isi saran nama guru ke datalist
   await _populateAkunGuruDropdown('');
@@ -1937,6 +1951,7 @@ async function openEditAkun(id) {
   f['akun-nama-guru'].value = a.namaGuru || '';
   f['akun-role'].value      = a.role;
   f['akun-status'].value    = a.aktif ? 'aktif' : 'nonaktif';
+  if (f['akun-wali-kelas']) f['akun-wali-kelas'].value = a.waliKelas || '';
 
   // Sembunyikan field password saat edit, tampilkan toggle ganti password
   document.getElementById('akun-password-group').style.display    = 'none';
@@ -1978,6 +1993,7 @@ async function saveAkun(e) {
   const namaGuru = f['akun-nama-guru'].value.trim() || username;
   const role     = f['akun-role'].value;
   const status   = f['akun-status'].value;
+  const waliKelas = f['akun-wali-kelas'] ? f['akun-wali-kelas'].value.trim() : '';
   const pass     = f['akun-password'].value;
   const konfirm  = f['akun-konfirmasi'].value;
   const btn      = document.getElementById('btn-save-akun');
@@ -2006,6 +2022,7 @@ async function saveAkun(e) {
       username,
       namaGuru:     namaGuru,
       role,
+      waliKelas,
       passwordHash: Auth._hash(pass),
       aktif:        status === 'aktif',
       createdAt:    new Date().toISOString(),
@@ -2017,6 +2034,7 @@ async function saveAkun(e) {
     if (idx === -1) return Toast.error('Akun tidak ditemukan');
     accounts[idx].namaGuru  = namaGuru;
     accounts[idx].role      = role;
+    accounts[idx].waliKelas = waliKelas;
     accounts[idx].aktif     = (status === 'aktif');
     accounts[idx].updatedAt = new Date().toISOString();
     if (isGantiPassword && pass) {
@@ -2082,10 +2100,10 @@ function downloadTemplateSiswa() {
   }
 
   const ws_data = [
-    ['No', 'Nama Lengkap', 'NISN', 'NIS', 'Tempat Lahir', 'Tanggal Lahir', 'Kelas', 'Jenjang'],
-    [1, 'Ahmad Fauzan', '1234567890', '2024001', 'Surabaya', '15/06/2013', '5', 'MI'],
-    [2, 'Siti Aisyah', '0987654321', '2024002', 'Gresik',   '22/09/2011', '7', 'MTs'],
-    [3, 'Muhammad Rizki', '1122334455', '2024003', 'Sidoarjo','01/03/2009', '10', 'MA'],
+    ['No', 'Nama Lengkap', 'NISN', 'NIS', 'Tempat Lahir', 'Tanggal Lahir', 'Kelas', 'Rombel', 'Jenjang'],
+    [1, 'Ahmad Fauzan', '1234567890', '2024001', 'Surabaya', '15/06/2013', '1', 'A', 'MI'],
+    [2, 'Siti Aisyah', '0987654321', '2024002', 'Gresik',   '22/09/2011', '1', 'B', 'MI'],
+    [3, 'Muhammad Rizki', '1122334455', '2024003', 'Sidoarjo','01/03/2009', '7', 'A', 'MTs'],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(ws_data);
@@ -2093,7 +2111,7 @@ function downloadTemplateSiswa() {
   // Set column widths
   ws['!cols'] = [
     { wch: 5 }, { wch: 30 }, { wch: 15 }, { wch: 12 },
-    { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 8 },
+    { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
   ];
 
   const wb = XLSX.utils.book_new();
@@ -2165,13 +2183,18 @@ function handleExcelFile(file) {
         throw new Error('File tidak memiliki data (minimal 2 baris: header + 1 data)');
       }
 
-      // Validate headers (row 0)
-      const headers = rows[0].map(h => String(h).trim().toLowerCase());
-      const requiredCols = ['nama'];
-      const hasRequired = requiredCols.every(col =>
-        headers.some(h => h.includes(col))
-      );
-      if (!hasRequired) {
+      // Detect header columns
+      const headers = rows[0].map(h => String(h || '').trim().toLowerCase());
+      const colNama    = headers.findIndex(h => h.includes('nama'));
+      const colNisn    = headers.findIndex(h => h.includes('nisn'));
+      const colNis     = headers.findIndex(h => h === 'nis' || (h.includes('nis') && !h.includes('nisn')));
+      const colTempat  = headers.findIndex(h => h.includes('tempat'));
+      const colTgl     = headers.findIndex(h => h.includes('tanggal') || h.includes('tgl') || h.includes('lahir'));
+      const colKelas   = headers.findIndex(h => h.includes('kelas'));
+      const colRombel  = headers.findIndex(h => h.includes('rombel'));
+      const colJenjang = headers.findIndex(h => h.includes('jenjang'));
+
+      if (colNama === -1 && !headers.some(h => h.includes('nama'))) {
         throw new Error('Kolom "Nama Lengkap" tidak ditemukan. Pastikan baris pertama adalah header sesuai template.');
       }
 
@@ -2182,16 +2205,38 @@ function handleExcelFile(file) {
         // Skip empty rows
         if (!row || row.every(cell => cell === '' || cell == null)) continue;
 
-        // Map columns: A=No, B=Nama, C=NISN, D=NIS, E=Tempat, F=Tgl, G=Kelas, H=Jenjang
-        const nama      = String(row[1] || '').trim();
-        const nisn      = String(row[2] || '').trim();
-        const nis       = String(row[3] || '').trim();
-        const tempatLahir = String(row[4] || '').trim();
-        const rawTgl    = row[5];
-        const kelas     = String(row[6] || '').trim();
-        const jenjang   = String(row[7] || '').trim().toUpperCase();
-
+        const nama = colNama !== -1 ? String(row[colNama] || '').trim() : String(row[1] || '').trim();
         if (!nama) continue; // Skip rows without name
+
+        const nisn = colNisn !== -1 ? String(row[colNisn] || '').trim() : String(row[2] || '').trim();
+        const nis  = colNis !== -1 ? String(row[colNis] || '').trim() : (row[3] ? String(row[3]).trim() : '');
+        const tempatLahir = colTempat !== -1 ? String(row[colTempat] || '').trim() : String(row[4] || '').trim();
+        const rawTgl = colTgl !== -1 ? row[colTgl] : row[5];
+
+        let rawKelas = colKelas !== -1 ? String(row[colKelas] || '').trim() : String(row[6] || '').trim();
+        let rombel   = colRombel !== -1 ? String(row[colRombel] || '').trim().toUpperCase() : '';
+        let jenjang  = colJenjang !== -1 ? String(row[colJenjang] || '').trim().toUpperCase() : '';
+
+        // If jenjang wasn't found by header
+        if (!jenjang) {
+          if (colRombel !== -1 && row[8]) {
+            jenjang = String(row[8] || '').trim().toUpperCase();
+          } else if (row[7] && colRombel === -1) {
+            jenjang = String(row[7] || '').trim().toUpperCase();
+          }
+        }
+
+        // If rombel is empty, try extracting from kelas (e.g. "1 A", "1-A", "1A")
+        let kelas = rawKelas;
+        if (!rombel && rawKelas) {
+          const match = rawKelas.match(/^(\d+)\s*[-_/\s]?\s*([A-Za-z]+)?$/);
+          if (match) {
+            kelas = match[1];
+            if (match[2]) {
+              rombel = match[2].toUpperCase();
+            }
+          }
+        }
 
         // Parse tanggal lahir
         let tanggalLahir = '';
@@ -2223,7 +2268,8 @@ function handleExcelFile(file) {
           tempatLahir,
           tanggalLahir,
           kelas:   String(kelas),
-          jenjang: validJenjang.includes(jenjang) ? jenjangNorm : jenjang,
+          rombel:  String(rombel),
+          jenjang: validJenjang.includes(jenjang) ? jenjangNorm : (jenjang || 'MI'),
         });
       }
 
@@ -2245,6 +2291,7 @@ function handleExcelFile(file) {
           <td>${escHtml(r.tempatLahir)}</td>
           <td>${escHtml(r.tanggalLahir)}</td>
           <td>${escHtml(r.kelas)}</td>
+          <td>${escHtml(r.rombel || '-')}</td>
           <td><span class="badge badge-${(r.jenjang || '').toLowerCase().replace('mts','mts')}">${escHtml(r.jenjang)}</span></td>
         </tr>
       `).join('');
@@ -2300,6 +2347,7 @@ async function processImportSiswa() {
       nis:           row.nis   || '',
       jenjang:       row.jenjang || 'MI',
       kelas:         row.kelas  || '',
+      rombel:        row.rombel || '',
       tempatLahir:   row.tempatLahir  || '',
       tanggalLahir:  row.tanggalLahir || '',
       namaWali:      '',
