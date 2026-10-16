@@ -200,10 +200,7 @@ function parseTugasToWaliKelas_(tugas) {
  * Baca semua baris dari sheet 'User' (atau 'user')
  */
 function getUsersFromSheet_() {
-  var ss = getSpreadsheet();
-  var userSheet = ss.getSheetByName('User') || ss.getSheetByName('user') || ss.getSheetByName('USERS');
-  if (!userSheet) return null;
-
+  var userSheet = getSheet(SHEETS.USER);
   var rawRows = sheetToObjects(userSheet.getName());
   if (!rawRows || rawRows.length === 0) return [];
 
