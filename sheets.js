@@ -129,6 +129,7 @@ const SheetsAPI = (() => {
     async getAll()        { return _get('getSiswa'); },
     async getById(id)     { return _get('getSiswaById', { id }, false); },
     async save(data)      { return _post('saveSiswa', { data }); },
+    async saveMany(arr)   { return _post('saveSiswaMany', { data: arr }); },
     async delete(id)      { return _post('deleteSiswa', { id }); },
   };
 
@@ -230,6 +231,17 @@ const LocalStore = (() => {
         }
         _save(name, all);
         return { data, ok: true };
+      },
+      async saveMany(dataArray) {
+        const all = _load(name);
+        dataArray.forEach(data => {
+          if (!data.id) data.id = _genId();
+          const idx = all.findIndex(r => r.id === data.id);
+          if (idx >= 0) all[idx] = data;
+          else all.push(data);
+        });
+        _save(name, all);
+        return { ok: true, count: dataArray.length };
       },
       async delete(id) {
         const all = _load(name).filter(r => r.id !== id);

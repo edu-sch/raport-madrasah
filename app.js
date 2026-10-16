@@ -2282,30 +2282,50 @@ async function processImportSiswa() {
   const existingNisMap = {};
   existing.forEach(s => { if (s.nis) existingNisMap[s.nis] = s.id; });
 
-  for (const row of _importData) {
-    try {
-      const existingId = row.nis ? existingNisMap[row.nis] : null;
-      const siswa = {
-        id:            existingId || genId(),
-        nama:          row.nama,
-        nisn:          row.nisn  || '',
-        nis:           row.nis   || '',
-        jenjang:       row.jenjang || 'MI',
-        kelas:         row.kelas  || '',
-        tempatLahir:   row.tempatLahir  || '',
-        tanggalLahir:  row.tanggalLahir || '',
-        namaWali:      '',
-        waliKelas:     '',
-        alamat:        '',
-        jenisKelamin:  'L',
-        updatedAt:     new Date().toISOString(),
-        createdAt:     existingId ? undefined : new Date().toISOString(),
-      };
-      await DataService.Siswa.save(siswa);
-      success++;
-    } catch (err) {
-      console.warn(`Gagal import baris ${row._rowNum}:`, err);
-      failed++;
+  // Prepare all siswa records
+  const siswaList = _importData.map(row => {
+    const existingId = row.nis ? existingNisMap[row.nis] : null;
+    return {
+      id:            existingId || genId(),
+      nama:          row.nama,
+      nisn:          row.nisn  || '',
+      nis:           row.nis   || '',
+      jenjang:       row.jenjang || 'MI',
+      kelas:         row.kelas  || '',
+      tempatLahir:   row.tempatLahir  || '',
+      tanggalLahir:  row.tanggalLahir || '',
+      namaWali:      '',
+      waliKelas:     '',
+      alamat:        '',
+      jenisKelamin:  'L',
+      updatedAt:     new Date().toISOString(),
+      createdAt:     existingId ? undefined : new Date().toISOString(),
+    };
+  });
+
+  try {
+    if (typeof DataService.Siswa.saveMany === 'function') {
+      await DataService.Siswa.saveMany(siswaList);
+      success = siswaList.length;
+    } else {
+      // Parallel batching fallback
+      const batchSize = 10;
+      for (let i = 0; i < siswaList.length; i += batchSize) {
+        const batch = siswaList.slice(i, i + batchSize);
+        await Promise.all(batch.map(s => DataService.Siswa.save(s)));
+        success += batch.length;
+      }
+    }
+  } catch (err) {
+    console.error('Import error:', err);
+    // Fallback one-by-one if batch failed
+    for (const s of siswaList) {
+      try {
+        await DataService.Siswa.save(s);
+        success++;
+      } catch {
+        failed++;
+      }
     }
   }
 

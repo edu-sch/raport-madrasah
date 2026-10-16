@@ -300,6 +300,16 @@ function doPost(e) {
         return jsonResponse({ ok: true, data });
       }
 
+      case 'saveSiswaMany': {
+        const items = body.data;
+        if (!Array.isArray(items)) return errorResponse('Data harus berupa array');
+        items.forEach(item => {
+          if (!item.updatedAt) item.updatedAt = new Date().toISOString();
+          upsertRecord(SHEETS.SISWA, item);
+        });
+        return jsonResponse({ ok: true, count: items.length });
+      }
+
       case 'deleteSiswa': {
         const { id } = body;
         if (!id) return errorResponse('ID diperlukan');
