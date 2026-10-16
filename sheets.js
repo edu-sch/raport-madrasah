@@ -129,7 +129,20 @@ const SheetsAPI = (() => {
     async getAll()        { return _get('getSiswa'); },
     async getById(id)     { return _get('getSiswaById', { id }, false); },
     async save(data)      { return _post('saveSiswa', { data }); },
-    async saveMany(arr)   { return _post('saveSiswaMany', { data: arr }); },
+    async saveMany(arr)   {
+      try {
+        return await _post('saveSiswaMany', { data: arr });
+      } catch (err) {
+        if (err.message && (err.message.includes('Action tidak dikenal') || err.message.includes('saveSiswaMany'))) {
+          console.warn('Apps Script belum mendukung saveSiswaMany, menggunakan fallback simpan berurutan...');
+          for (const s of arr) {
+            await _post('saveSiswa', { data: s });
+          }
+          return { ok: true, count: arr.length };
+        }
+        throw err;
+      }
+    },
     async delete(id)      { return _post('deleteSiswa', { id }); },
   };
 
@@ -139,7 +152,20 @@ const SheetsAPI = (() => {
     async getBySiswa(siswaId)  { return _get('getNilaiBySiswa', { siswaId }, false); },
     async getByKelas(params)   { return _get('getNilaiByKelas', params, false); },
     async save(data)           { return _post('saveNilai', { data }); },
-    async saveMany(dataArray)  { return _post('saveNilaiMany', { data: dataArray }); },
+    async saveMany(dataArray)  {
+      try {
+        return await _post('saveNilaiMany', { data: dataArray });
+      } catch (err) {
+        if (err.message && (err.message.includes('Action tidak dikenal') || err.message.includes('saveNilaiMany'))) {
+          console.warn('Apps Script belum mendukung saveNilaiMany, menggunakan fallback simpan berurutan...');
+          for (const n of dataArray) {
+            await _post('saveNilai', { data: n });
+          }
+          return { ok: true, count: dataArray.length };
+        }
+        throw err;
+      }
+    },
     async delete(id)           { return _post('deleteNilai', { id }); },
   };
 

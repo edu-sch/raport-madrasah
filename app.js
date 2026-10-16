@@ -357,9 +357,16 @@ async function saveAllRombel() {
     });
 
     if (toUpdate.length > 0) {
-      if (typeof DataService.Siswa.saveMany === 'function') {
-        await DataService.Siswa.saveMany(toUpdate);
-      } else {
+      try {
+        if (typeof DataService.Siswa.saveMany === 'function') {
+          await DataService.Siswa.saveMany(toUpdate);
+        } else {
+          for (const s of toUpdate) {
+            await DataService.Siswa.save(s);
+          }
+        }
+      } catch (saveErr) {
+        console.warn('saveMany gagal, mencoba fallback simpan satu per satu...', saveErr);
         for (const s of toUpdate) {
           await DataService.Siswa.save(s);
         }
@@ -1187,9 +1194,16 @@ async function saveNilaiPerMapel() {
       return;
     }
 
-    if (typeof DataService.Nilai.saveMany === 'function') {
-      await DataService.Nilai.saveMany(records);
-    } else {
+    try {
+      if (typeof DataService.Nilai.saveMany === 'function') {
+        await DataService.Nilai.saveMany(records);
+      } else {
+        for (const rec of records) {
+          await DataService.Nilai.save(rec);
+        }
+      }
+    } catch (saveErr) {
+      console.warn('saveMany gagal, mencoba fallback simpan satu per satu...', saveErr);
       for (const rec of records) {
         await DataService.Nilai.save(rec);
       }
