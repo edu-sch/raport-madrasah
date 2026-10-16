@@ -41,6 +41,7 @@ const SHEETS = {
   KEPALA: 'KepalaData',
   KELAS:  'Kelas',
   AKUN:   'AkunGuru',
+  USER:   'User',
 };
 
 // ── CORS Headers ───────────────────────────────────────────────
@@ -69,6 +70,16 @@ function getSheet(name) {
   const ss = getSpreadsheet();
   let sheet = ss.getSheetByName(name);
   if (!sheet) {
+    // Cek kecocokan nama tanpa sensitif huruf besar/kecil
+    const allSheets = ss.getSheets();
+    for (let i = 0; i < allSheets.length; i++) {
+      if (allSheets[i].getName().trim().toLowerCase() === name.toLowerCase()) {
+        return allSheets[i];
+      }
+    }
+  }
+
+  if (!sheet) {
     sheet = ss.insertSheet(name);
     // Initialize headers
     const headers = {
@@ -79,6 +90,7 @@ function getSheet(name) {
       [SHEETS.KEPALA]: ['id','nama','nip','jabatan','ttdUrl'],
       [SHEETS.KELAS]:  ['id','nama','jenjang'],
       [SHEETS.AKUN]:   ['id','username','namaGuru','role','waliKelas','passwordHash','aktif','createdAt','updatedAt'],
+      [SHEETS.USER]:   ['user','password','Nama Guru','Tugas','Status'],
     };
     const h = headers[name];
     if (h) {
@@ -89,6 +101,12 @@ function getSheet(name) {
         .setFontColor('#ffffff')
         .setFontWeight('bold');
       sheet.setFrozenRows(1);
+
+      if (name === SHEETS.USER) {
+        // Contoh awal user dan password guru
+        sheet.appendRow(['admin', 'admin123', 'Administrator', 'Admin', 'Aktif']);
+        sheet.appendRow(['pakguru', '123456', 'H. MUSTOFA ALI', 'Wali Kelas 1 A', 'Aktif']);
+      }
     }
   }
   return sheet;
@@ -168,6 +186,53 @@ function deleteRecord(sheetName, id) {
   return false;
 }
 
+/**
+ * Parse teks tugas menjadi nilai wali kelas sederhana (misal 'Wali Kelas 1 A' -> '1 A')
+ */
+function parseTugasToWaliKelas_(tugas) {
+  if (!tugas) return '';
+  var str = String(tugas).trim();
+  var match = str.match(/wali\s*kelas\s*(.*)/i);
+  return match && match[1] ? match[1].trim() : str;
+}
+
+/**
+ * Baca semua baris dari sheet 'User' (atau 'user')
+ */
+function getUsersFromSheet_() {
+  var ss = getSpreadsheet();
+  var userSheet = ss.getSheetByName('User') || ss.getSheetByName('user') || ss.getSheetByName('USERS');
+  if (!userSheet) return null;
+
+  var rawRows = sheetToObjects(userSheet.getName());
+  if (!rawRows || rawRows.length === 0) return [];
+
+  return rawRows.map(function(r, idx) {
+    var user = String(r.user || r.User || r.username || r.Username || '').trim();
+    var pass = String(r.password || r.Password || '').trim();
+    var nama = String(r['Nama Guru'] || r.namaGuru || r.nama || r.Nama || user).trim();
+    var tugas = String(r.Tugas || r.tugas || r.waliKelas || '').trim();
+    var rawStat = String(r.Status || r.status || 'Aktif').trim();
+    var aktif = (rawStat.toLowerCase() === 'aktif' || rawStat === '1' || rawStat.toLowerCase() === 'active');
+    var role = (user.toLowerCase() === 'admin') ? 'admin' : 'guru';
+    var waliKelas = parseTugasToWaliKelas_(tugas);
+
+    return {
+      id: user || ('USR_' + idx),
+      username: user,
+      user: user,
+      password: pass,
+      namaGuru: nama,
+      nama: nama,
+      tugas: tugas,
+      waliKelas: waliKelas,
+      role: role,
+      status: rawStat,
+      aktif: aktif
+    };
+  }).filter(function(u) { return u.username.length > 0; });
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ── ROUTER ─────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -225,11 +290,42 @@ function doGet(e) {
       }
 
       // ─── Guru ───────────
-      case 'getGuru':
+      case 'getGuru': {
+        const users = getUsersFromSheet_();
+        if (users && users.length > 0) {
+          const guruList = users.map(function(u) {
+            return {
+              id: u.username || u.id,
+              nama: u.namaGuru || u.username,
+              waliKelas: u.waliKelas || u.tugas,
+              tugas: u.tugas || '',
+              nip: '',
+              telepon: '',
+              alamat: ''
+            };
+          });
+          return jsonResponse({ data: guruList });
+        }
         return jsonResponse({ data: sheetToObjects(SHEETS.GURU) });
+      }
 
       case 'getGuruById': {
         const id = e.parameter.id;
+        const users = getUsersFromSheet_();
+        if (users && users.length > 0) {
+          const found = users.find(function(u) { return u.id === id || u.username === id; });
+          if (found) {
+            return jsonResponse({
+              data: {
+                id: found.username || found.id,
+                nama: found.namaGuru,
+                waliKelas: found.waliKelas,
+                tugas: found.tugas,
+                nip: '', telepon: '', alamat: ''
+              }
+            });
+          }
+        }
         const all = sheetToObjects(SHEETS.GURU);
         return jsonResponse({ data: all.find(g => g.id === id) || null });
       }
@@ -244,8 +340,13 @@ function doGet(e) {
       case 'getKelas':
         return jsonResponse({ data: sheetToObjects(SHEETS.KELAS) });
 
-      // ─── Akun Guru ───────
+      // ─── Akun Guru / User ───────
+      case 'getUser':
       case 'getAkun': {
+        const users = getUsersFromSheet_();
+        if (users && users.length > 0) {
+          return jsonResponse({ data: users });
+        }
         let all = sheetToObjects(SHEETS.AKUN);
         if (all.length === 0) {
           const defaultAdmin = {
@@ -434,6 +535,34 @@ function doPost(e) {
         if (!id) return errorResponse('ID diperlukan');
         if (id === 'admin') return errorResponse('Akun admin sistem tidak dapat dihapus');
         deleteRecord(SHEETS.AKUN, id);
+        return jsonResponse({ ok: true });
+      }
+
+      // ─── User (Sheet User) ──────────
+      case 'saveUser': {
+        const data = body.data;
+        if (!data) return errorResponse('Data user diperlukan');
+        const userSheet = getSheet(SHEETS.USER);
+        const userVal   = data.user || data.username || data.id;
+        const passVal   = data.password || '';
+        const namaVal   = data['Nama Guru'] || data.namaGuru || data.nama || userVal;
+        const tugasVal  = data.Tugas || data.tugas || data.waliKelas || '';
+        const statusVal = data.Status || data.status || 'Aktif';
+
+        const rowIdx = findRowById(SHEETS.USER, userVal);
+        if (rowIdx > 0) {
+          userSheet.getRange(rowIdx, 1, 1, 5).setValues([[userVal, passVal, namaVal, tugasVal, statusVal]]);
+        } else {
+          userSheet.appendRow([userVal, passVal, namaVal, tugasVal, statusVal]);
+        }
+        return jsonResponse({ ok: true, data });
+      }
+
+      case 'deleteUser': {
+        const { id } = body;
+        if (!id) return errorResponse('ID user diperlukan');
+        if (id === 'admin') return errorResponse('Akun admin tidak dapat dihapus');
+        deleteRecord(SHEETS.USER, id);
         return jsonResponse({ ok: true });
       }
 

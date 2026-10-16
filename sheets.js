@@ -203,17 +203,23 @@ const SheetsAPI = (() => {
     async delete(id)   { return _post('deleteKelas', { id }); },
   };
 
-  // ─── Akun Guru ──────────────────────────────────────────────
+  // ─── Akun Guru / User ──────────────────────────────────────
   const Akun = {
     async getAll()     { return _get('getAkun', {}, false); },
     async save(data)   { return _post('saveAkun', { data }); },
     async delete(id)   { return _post('deleteAkun', { id }); },
   };
 
+  const User = {
+    async getAll()     { return _get('getUser', {}, false); },
+    async save(data)   { return _post('saveUser', { data }); },
+    async delete(id)   { return _post('deleteUser', { id }); },
+  };
+
   return {
     setUrl, getUrl, isConnected, getLastError,
     testConnection,
-    Siswa, Nilai, Mapel, Guru, Kepala, Kelas, Akun,
+    Siswa, Nilai, Mapel, Guru, Kepala, Kelas, Akun, User,
     clearCache: _clearCache,
   };
 })();
@@ -392,5 +398,6 @@ const DataService = (() => {
     get Kepala()  { return _store().Kepala; },
     get Kelas()   { return _store().Kelas; },
     get Akun()    { return _store().Akun; },
+    get User()    { return _store().User || _store().Akun; },
   };
 })();

@@ -122,6 +122,14 @@ function avg(arr) {
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
+/** Parse teks tugas menjadi nilai wali kelas sederhana (misal 'Wali Kelas 1 A' -> '1 A') */
+function parseTugasToWaliKelas(tugas) {
+  if (!tugas) return '';
+  const str = String(tugas).trim();
+  const match = str.match(/wali\s*kelas\s*(.*)/i);
+  return match && match[1] ? match[1].trim() : str;
+}
+
 /* ============================================================
  * ─── STATE MANAGEMENT ──────────────────────────────────────
  * ============================================================ */
@@ -875,8 +883,9 @@ async function renderNilaiControls() {
 
   // Auto-select jika user yang login adalah Wali Kelas
   const u = Auth.getUser();
-  if (u && u.waliKelas) {
-    const parts = u.waliKelas.trim().split(/\s+/);
+  if (u && (u.waliKelas || u.tugas)) {
+    const rawWk = parseTugasToWaliKelas(u.waliKelas || u.tugas);
+    const parts = rawWk.trim().split(/\s+/);
     if (parts.length >= 1) {
       const kelasVal = parts[0];
       const rombelVal = parts[1] || '';
@@ -2009,8 +2018,32 @@ const Auth = {
         }
         const res = await SheetsAPI.Akun.getAll();
         if (res && Array.isArray(res.data) && res.data.length > 0) {
-          this._saveAccounts(res.data);
-          console.log(`✅ ${res.data.length} akun berhasil disinkronkan dari Google Sheets`);
+          const list = res.data.map(u => {
+            const username = String(u.user || u.username || u.User || u.id || '').trim();
+            const namaGuru = String(u['Nama Guru'] || u.namaGuru || u.nama || u.Nama || username).trim();
+            const tugas    = String(u.Tugas || u.tugas || u.waliKelas || '').trim();
+            const rawStatus = String(u.Status || u.status || 'Aktif').trim();
+            const aktif = (u.aktif === true || rawStatus.toLowerCase() === 'aktif' || rawStatus === '1');
+            const role = (username.toLowerCase() === 'admin') ? 'admin' : (u.role || 'guru');
+            const waliKelas = parseTugasToWaliKelas(tugas || u.waliKelas);
+            const pass = String(u.password || u.Password || '').trim();
+            const passHash = u.passwordHash || (pass ? Auth._hash(pass) : '');
+
+            return {
+              id:           u.id || username,
+              username:     username,
+              password:     pass,
+              passwordHash: passHash,
+              namaGuru:     namaGuru,
+              tugas:        tugas,
+              waliKelas:    waliKelas,
+              role:         role,
+              status:       rawStatus,
+              aktif:        aktif
+            };
+          });
+          this._saveAccounts(list);
+          console.log(`✅ ${list.length} akun berhasil disinkronkan dari Google Sheets`);
         }
       } catch (err) {
         console.warn('Sync akun dari Sheets gagal:', err);
@@ -2060,7 +2093,10 @@ const Auth = {
         return;
       }
 
-      if (account.passwordHash !== this._hash(password)) {
+      const isPlainMatch = account.password && (String(account.password).trim() === String(password).trim());
+      const isHashMatch  = account.passwordHash && (account.passwordHash === this._hash(password));
+
+      if (!isPlainMatch && !isHashMatch) {
         this._showLoginError('Password salah. Coba lagi.', errEl);
         btn.disabled = false;
         btnText.textContent = 'Masuk';
@@ -2158,9 +2194,11 @@ const Auth = {
       }
     });
 
-    // Akun Guru nav item hanya untuk admin
+    // Menu Data Guru & Akun Guru disembunyikan sesuai permintaan karena dikelola langsung di Google Sheet 'User'
+    const navGuru = document.getElementById('nav-guru');
+    if (navGuru) navGuru.style.setProperty('display', 'none', 'important');
     const navAkun = document.getElementById('nav-akun');
-    if (navAkun) navAkun.style.display = isAdmin ? '' : 'none';
+    if (navAkun) navAkun.style.setProperty('display', 'none', 'important');
 
     // Tombol Import Excel & Tambah Siswa disesuaikan untuk admin
     const btnImport = document.querySelector('[onclick="openImportExcel()"]');
@@ -2769,10 +2807,49 @@ async function syncAllData(isManual = false) {
     }
 
     if (akunRes.status === 'fulfilled' && Array.isArray(akunRes.value?.data) && akunRes.value.data.length > 0) {
-      Auth._saveAccounts(akunRes.value.data);
-    }
+      const normalizedAccounts = akunRes.value.data.map(u => {
+        const username = String(u.user || u.username || u.User || u.id || '').trim();
+        const namaGuru = String(u['Nama Guru'] || u.namaGuru || u.nama || u.Nama || username).trim();
+        const tugas    = String(u.Tugas || u.tugas || u.waliKelas || '').trim();
+        const rawStatus = String(u.Status || u.status || 'Aktif').trim();
+        const aktif = (u.aktif === true || rawStatus.toLowerCase() === 'aktif' || rawStatus === '1');
+        const role = (username.toLowerCase() === 'admin') ? 'admin' : (u.role || 'guru');
+        const waliKelas = parseTugasToWaliKelas(tugas || u.waliKelas);
+        const pass = String(u.password || u.Password || '').trim();
+        const passHash = u.passwordHash || (pass ? Auth._hash(pass) : '');
 
-    if (guruRes.status === 'fulfilled' && Array.isArray(guruRes.value?.data)) {
+        return {
+          id:           u.id || username,
+          username:     username,
+          password:     pass,
+          passwordHash: passHash,
+          namaGuru:     namaGuru,
+          tugas:        tugas,
+          waliKelas:    waliKelas,
+          role:         role,
+          status:       rawStatus,
+          aktif:        aktif
+        };
+      });
+
+      Auth._saveAccounts(normalizedAccounts);
+
+      // Auto-update State.guru dari data User/Akun di spreadsheet (tidak perlu input guru terpisah)
+      const teachersFromUsers = normalizedAccounts.map(a => ({
+        id:        a.id || a.username,
+        nama:      a.namaGuru,
+        waliKelas: a.waliKelas,
+        tugas:     a.tugas,
+        nip:       '',
+        telepon:   '',
+        alamat:    ''
+      }));
+
+      if (teachersFromUsers.length > 0) {
+        State.guru = teachersFromUsers;
+        localStorage.setItem('mdb_guru', JSON.stringify(State.guru));
+      }
+    } else if (guruRes.status === 'fulfilled' && Array.isArray(guruRes.value?.data)) {
       State.guru = guruRes.value.data;
       localStorage.setItem('mdb_guru', JSON.stringify(State.guru));
     }
