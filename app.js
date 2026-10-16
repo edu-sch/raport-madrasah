@@ -2018,65 +2018,6 @@ const Auth = {
     }
   },
 
-  /** Open Server Config modal from login screen */
-  openServerConfig() {
-    const input = document.getElementById('login-sheets-url-input');
-    const curr = (typeof SheetsAPI !== 'undefined' && SheetsAPI.getUrl()) || State.settings.sheetsUrl || '';
-    if (input) input.value = curr;
-    const status = document.getElementById('login-server-status');
-    if (status) status.style.display = 'none';
-    Modal.open('modal-server-config');
-  },
-
-  /** Save Server Config and sync accounts */
-  async saveServerConfig() {
-    const input = document.getElementById('login-sheets-url-input');
-    const url = input?.value.trim();
-    const status = document.getElementById('login-server-status');
-    const btn = document.getElementById('btn-save-login-server');
-
-    if (!url) {
-      if (status) {
-        status.innerHTML = '<span style="color:#b71c1c">❌ Masukkan URL Web App Google Apps Script</span>';
-        status.style.display = 'block';
-      }
-      return;
-    }
-
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menghubungkan...'; }
-
-    try {
-      await SheetsAPI.setUrl(url);
-      await SheetsAPI.testConnection();
-
-      // Simpan ke settings
-      State.settings.sheetsUrl = url;
-      saveSettings();
-
-      // Unduh akun
-      await this.syncFromSheets();
-      const accounts = this._getAccounts();
-
-      if (status) {
-        status.innerHTML = `<span style="color:var(--green-ok);font-weight:600">✅ Berhasil terhubung! ${accounts.length} akun tersinkronkan. Silakan tutup dan login.</span>`;
-        status.style.display = 'block';
-      }
-
-      setTimeout(() => {
-        Modal.close('modal-server-config');
-        Toast.success('Google Sheets terhubung! Silakan login dengan akun guru Anda.');
-      }, 1500);
-
-    } catch (err) {
-      if (status) {
-        status.innerHTML = `<span style="color:#b71c1c">❌ Gagal terhubung: ${escHtml(err.message)}</span>`;
-        status.style.display = 'block';
-      }
-    } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = '🔗 Sambungkan & Unduh Akun'; }
-    }
-  },
-
   /** Handle login form submit */
   async login(e) {
     e.preventDefault();
@@ -2106,11 +2047,7 @@ const Auth = {
       }
 
       if (!account) {
-        const hasSheets = typeof SheetsAPI !== 'undefined' && SheetsAPI.isConnected();
-        const hint = !hasSheets
-          ? '<br><small style="margin-top:6px;display:block;font-size:0.75rem;color:var(--gray-600)">Perangkat ini belum tersambung ke Google Sheets. Klik tombol <b>"⚙️ Sambungkan Google Sheets (HP Baru)"</b> di bawah.</small>'
-          : '';
-        this._showLoginError('Username tidak ditemukan.' + hint, errEl);
+        this._showLoginError('Username tidak ditemukan. Periksa kembali username Anda.', errEl);
         btn.disabled = false;
         btnText.textContent = 'Masuk';
         return;
@@ -2791,6 +2728,127 @@ async function processImportSiswa() {
 }
 
 /* ============================================================
+ * ─── SINKRONISASI DATA GOOGLE SHEETS ────────────────────────
+ * ============================================================ */
+
+/**
+ * Sinkronisasi seluruh data dari Google Spreadsheet ke State & LocalStore
+ * @param {boolean} isManual - true jika dipicu dari tombol pengguna
+ */
+async function syncAllData(isManual = false) {
+  const syncBtn = document.getElementById('btn-sync-all');
+  if (syncBtn) {
+    syncBtn.classList.add('loading');
+    syncBtn.innerHTML = '<span class="sync-icon">🔄</span> Menyinkronkan...';
+    syncBtn.disabled = true;
+  }
+
+  try {
+    if (typeof SheetsAPI === 'undefined' || !SheetsAPI.getUrl()) {
+      if (isManual) Toast.warning('URL Google Sheets belum terhubung');
+      return;
+    }
+
+    // Bersihkan cache agar data terbaru selalu ditarik dari spreadsheet
+    SheetsAPI.clearCache();
+
+    // Unduh semua koleksi secara paralel
+    const [siswaRes, akunRes, guruRes, mapelRes, kelasRes, kepalaRes, nilaiRes] = await Promise.allSettled([
+      SheetsAPI.Siswa.getAll(),
+      SheetsAPI.Akun.getAll(),
+      SheetsAPI.Guru.getAll(),
+      SheetsAPI.Mapel.getAll(),
+      SheetsAPI.Kelas.getAll(),
+      SheetsAPI.Kepala.get(),
+      SheetsAPI.Nilai.getAll()
+    ]);
+
+    if (siswaRes.status === 'fulfilled' && Array.isArray(siswaRes.value?.data)) {
+      State.siswa = siswaRes.value.data;
+      localStorage.setItem('mdb_siswa', JSON.stringify(State.siswa));
+    }
+
+    if (akunRes.status === 'fulfilled' && Array.isArray(akunRes.value?.data) && akunRes.value.data.length > 0) {
+      Auth._saveAccounts(akunRes.value.data);
+    }
+
+    if (guruRes.status === 'fulfilled' && Array.isArray(guruRes.value?.data)) {
+      State.guru = guruRes.value.data;
+      localStorage.setItem('mdb_guru', JSON.stringify(State.guru));
+    }
+
+    if (mapelRes.status === 'fulfilled' && Array.isArray(mapelRes.value?.data)) {
+      State.mapel = mapelRes.value.data;
+      localStorage.setItem('mdb_mapel', JSON.stringify(State.mapel));
+    }
+
+    if (kelasRes.status === 'fulfilled' && Array.isArray(kelasRes.value?.data)) {
+      State.kelas = kelasRes.value.data;
+      localStorage.setItem('mdb_kelas', JSON.stringify(State.kelas));
+    }
+
+    if (kepalaRes.status === 'fulfilled' && kepalaRes.value?.data) {
+      State.kepala = kepalaRes.value.data;
+      localStorage.setItem('mdb_kepala', JSON.stringify(State.kepala));
+    }
+
+    if (nilaiRes.status === 'fulfilled' && Array.isArray(nilaiRes.value?.data)) {
+      State.nilai = nilaiRes.value.data;
+      localStorage.setItem('mdb_nilai', JSON.stringify(State.nilai));
+    }
+
+    // Refresh halaman yang aktif jika ada
+    const activeSection = document.querySelector('.page.active');
+    if (activeSection) {
+      const pageId = activeSection.id.replace('page-', '');
+      switch (pageId) {
+        case 'dashboard':
+          await renderDashboard();
+          break;
+        case 'siswa':
+          await renderSiswa();
+          break;
+        case 'akun':
+          await renderAkun();
+          break;
+        case 'mapel':
+          await renderMapel();
+          break;
+        case 'guru':
+          await renderGuru();
+          break;
+        case 'kepala':
+          await renderKepala();
+          break;
+        case 'nilai':
+          if (typeof loadNilaiSiswaList === 'function') await loadNilaiSiswaList();
+          break;
+        case 'cetak':
+          if (typeof updateCetakKelasOptions === 'function') updateCetakKelasOptions();
+          break;
+      }
+    }
+
+    if (isManual) {
+      Toast.success('✅ Berhasil menyinkronkan seluruh data dari Google Spreadsheet!');
+    }
+    console.log('✅ Sinkronisasi otomatis data Google Sheets selesai.');
+  } catch (err) {
+    console.warn('Gagal sinkronisasi data:', err);
+    if (isManual) {
+      Toast.error('Gagal menyinkronkan: ' + err.message);
+    }
+  } finally {
+    if (syncBtn) {
+      syncBtn.classList.remove('loading');
+      syncBtn.innerHTML = '<span class="sync-icon">🔄</span> Sinkronisasi Data';
+      syncBtn.disabled = false;
+    }
+  }
+}
+window.syncAllData = syncAllData;
+
+/* ============================================================
  * ─── INITIALIZATION ────────────────────────────────────────
  * ============================================================ */
 function initApp() {
@@ -2894,6 +2952,9 @@ function initApp() {
 
   // Navigate to dashboard by default
   navigate('dashboard');
+
+  // Sinkronisasi data Google Sheets otomatis setiap link dibuka
+  syncAllData(false).catch(err => console.warn('Auto sync on start:', err));
 
   console.log('✅ Raport Madrasah Darul Barokah - App initialized');
 }
