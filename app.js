@@ -1960,11 +1960,24 @@ const Auth = {
   },
 
   /** Initialize auth on app start */
-  init() {
+  async init() {
     this._initDefaultAdmin();
 
-    // Sinkronkan akun dari Google Sheets jika sudah terhubung
-    this.syncFromSheets().catch(() => {});
+    // Pastikan URL default Google Sheets otomatis terhubung
+    const defaultUrl = 'https://script.google.com/macros/s/AKfycby_qJ7gIzI4xffuPjwKbzinRgq4YNQaFGrAgCbEavHW2-z6A1jpie4Dm2jxU_dznd-5/exec';
+    if (!State.settings.sheetsUrl) {
+      State.settings.sheetsUrl = defaultUrl;
+      saveSettings();
+    }
+
+    if (typeof SheetsAPI !== 'undefined') {
+      if (!SheetsAPI.getUrl()) {
+        await SheetsAPI.setUrl(defaultUrl);
+      }
+    }
+
+    // Selalu sinkronkan akun dari Google Sheets secara langsung
+    await this.syncFromSheets();
 
     // Check for saved session
     try {
@@ -1988,12 +2001,16 @@ const Auth = {
 
   /** Sinkronisasi akun dari Google Sheets ke cache lokal */
   async syncFromSheets() {
-    if (typeof SheetsAPI !== 'undefined' && SheetsAPI.isConnected()) {
+    const url = (typeof SheetsAPI !== 'undefined' && SheetsAPI.getUrl()) || State.settings.sheetsUrl;
+    if (url && typeof SheetsAPI !== 'undefined') {
       try {
-        const res = await DataService.Akun.getAll();
+        if (!SheetsAPI.isConnected()) {
+          await SheetsAPI.setUrl(url);
+        }
+        const res = await SheetsAPI.Akun.getAll();
         if (res && Array.isArray(res.data) && res.data.length > 0) {
           this._saveAccounts(res.data);
-          console.log('✅ Akun berhasil disinkronkan dari Google Sheets');
+          console.log(`✅ ${res.data.length} akun berhasil disinkronkan dari Google Sheets`);
         }
       } catch (err) {
         console.warn('Sync akun dari Sheets gagal:', err);
@@ -2851,10 +2868,13 @@ function initApp() {
   });
 
   // Initialize settings
+  const defaultUrl = 'https://script.google.com/macros/s/AKfycby_qJ7gIzI4xffuPjwKbzinRgq4YNQaFGrAgCbEavHW2-z6A1jpie4Dm2jxU_dznd-5/exec';
   const s = State.settings;
-  if (s.sheetsUrl) {
-    SheetsAPI.setUrl(s.sheetsUrl).then(updateConnectionStatus);
+  if (!s.sheetsUrl) {
+    s.sheetsUrl = defaultUrl;
+    saveSettings();
   }
+  SheetsAPI.setUrl(s.sheetsUrl).then(updateConnectionStatus).catch(() => {});
 
   // Set default tahun ajaran
   if (!s.tahunAjaran) {

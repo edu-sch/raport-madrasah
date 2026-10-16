@@ -7,9 +7,12 @@
  */
 
 const SheetsAPI = (() => {
+  // ── Default Google Apps Script URL ─────────────────────────
+  const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby_qJ7gIzI4xffuPjwKbzinRgq4YNQaFGrAgCbEavHW2-z6A1jpie4Dm2jxU_dznd-5/exec';
+
   // ── Private State ──────────────────────────────────────────
-  let _scriptUrl = '';
-  let _connected  = false;
+  let _scriptUrl  = DEFAULT_SCRIPT_URL;
+  let _connected  = true; // Default to true using the central shared spreadsheet
   let _lastError  = null;
 
   // ── Constants ──────────────────────────────────────────────
@@ -99,7 +102,7 @@ const SheetsAPI = (() => {
 
   /** Set and validate the Apps Script URL */
   async function setUrl(url) {
-    _scriptUrl = url.trim();
+    _scriptUrl = (url || DEFAULT_SCRIPT_URL).trim();
     _connected = false;
     _lastError = null;
     try {
@@ -112,9 +115,10 @@ const SheetsAPI = (() => {
     }
   }
 
-  function getUrl()       { return _scriptUrl;  }
-  function isConnected()  { return _connected;   }
-  function getLastError() { return _lastError;   }
+  function getUrl()          { return _scriptUrl;  }
+  function getDefaultUrl()   { return DEFAULT_SCRIPT_URL; }
+  function isConnected()     { return _connected;   }
+  function getLastError()    { return _lastError;   }
 
   /** Ping the Apps Script to verify it's reachable */
   async function testConnection() {
