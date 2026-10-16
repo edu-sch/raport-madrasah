@@ -1434,13 +1434,19 @@ select { cursor: pointer; appearance: none;
   transform: none;
 }
 
-.btn-sync .sync-icon {
+.btn-sync .sync-svg {
+  width: 17px;
+  height: 17px;
   display: inline-block;
-  font-size: 1rem;
+  flex-shrink: 0;
+  stroke: #ffffff;
+  stroke-width: 2.5;
+  transition: transform 0.2s ease;
 }
 
-.btn-sync.loading .sync-icon {
-  animation: spin-sync 1s linear infinite;
+.btn-sync.loading .sync-svg {
+  animation: spin-sync 0.85s linear infinite;
+  transform-origin: center center;
 }
 
 @keyframes spin-sync {

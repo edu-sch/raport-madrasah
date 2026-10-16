@@ -175,7 +175,10 @@
       </div>
       <div class="topbar-right">
         <button class="btn-sync" id="btn-sync-all" onclick="syncAllData(true)" title="Sinkronkan data dengan Google Spreadsheet">
-          <span class="sync-icon">🔄</span> Sinkronisasi Data
+          <svg class="sync-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+          </svg>
+          <span class="btn-sync-text">Sinkronisasi Data</span>
         </button>
         <div class="topbar-info">
           <strong id="topbar-semester">Semester Ganjil</strong>
@@ -358,12 +361,15 @@
       <section id="page-siswa" class="page">
 
         <div class="section-header">
-          <h2 class="section-title">Data Siswa</h2>
+          <h2 class="section-title">Data Siswa & Pembagian Rombel</h2>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-outline btn-sm" onclick="downloadTemplateSiswa()">📄 Download Template</button>
-            <button class="btn btn-gold btn-sm" onclick="openImportExcel()">📥 Import Excel</button>
-            <button class="btn btn-primary" onclick="openAddSiswa()">➕ Tambah Siswa</button>
+            <button class="btn btn-primary btn-sm" id="btn-save-all-rombel" onclick="saveAllRombel()" style="font-weight:700">💾 Simpan Rombel Sekaligus</button>
           </div>
+        </div>
+
+        <div class="info-box info" style="margin-bottom:14px">
+          <span>💡</span>
+          <span>Penambahan &amp; pengeditan data siswa dilakukan langsung di <strong>Google Spreadsheet</strong> (tab <em>Siswa</em>). Halaman ini khusus untuk mengatur dan mencentang pembagian <strong>Rombel (A atau B)</strong> lalu klik Simpan.</span>
         </div>
 
         <!-- Filter Bar -->
@@ -396,7 +402,6 @@
             <option value="none">Belum Ada Rombel</option>
           </select>
           <button class="btn btn-outline btn-sm" onclick="renderSiswa()">🔄 Refresh</button>
-          <button class="btn btn-primary btn-sm" id="btn-save-all-rombel" onclick="saveAllRombel()" style="margin-left:auto;font-weight:700">💾 Simpan Rombel Sekaligus</button>
         </div>
 
         <!-- Table -->
@@ -410,14 +415,13 @@
                   <th>NIS</th>
                   <th>Jenjang</th>
                   <th>Kelas</th>
-                  <th style="min-width:145px;background:#16445f">Pilih Rombel (A / B)</th>
+                  <th style="min-width:145px;background:#16445f;text-align:center">Pilih Rombel (A / B)</th>
                   <th>Wali Kelas</th>
                   <th>Nama Orang Tua/Wali</th>
-                  <th>Aksi</th>
                 </tr>
               </thead>
               <tbody id="siswa-tbody">
-                <tr><td colspan="9" style="text-align:center;padding:32px;color:var(--gray-500)">
+                <tr><td colspan="8" style="text-align:center;padding:32px;color:var(--gray-500)">
                   Memuat data...
                 </td></tr>
               </tbody>

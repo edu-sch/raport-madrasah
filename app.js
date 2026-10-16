@@ -130,6 +130,28 @@ function parseTugasToWaliKelas(tugas) {
   return match && match[1] ? match[1].trim() : str;
 }
 
+/**
+ * Dapatkan kelas & rombel yang diampu oleh guru yang sedang login (wali kelas).
+ * Mengembalikan null jika akun adalah admin (admin bisa mengelola semua kelas).
+ */
+function getGuruAssignedKelas() {
+  const u = typeof Auth !== 'undefined' ? Auth.getUser() : null;
+  if (!u || Auth.isAdmin()) return null;
+  const raw = parseTugasToWaliKelas(u.waliKelas || u.tugas || '');
+  if (!raw) return null;
+  const parts = raw.trim().split(/\s+/);
+  if (!parts.length) return null;
+  const kelas = parts[0]; // contoh "5"
+  const rombel = parts[1] || ''; // contoh "A"
+  const num = parseInt(kelas, 10);
+  let jenjang = 'MI';
+  if (num >= 7 && num <= 9) jenjang = 'MTs';
+  else if (num >= 10 && num <= 12) jenjang = 'MA';
+  else if (num >= 1 && num <= 6) jenjang = 'MI';
+
+  return { kelas, rombel, jenjang, raw };
+}
+
 /* ============================================================
  * ─── STATE MANAGEMENT ──────────────────────────────────────
  * ============================================================ */
@@ -289,7 +311,20 @@ async function renderDashboard() {
     const countMTs = State.siswa.filter(s => s.jenjang === 'MTs').length;
     const countMA  = State.siswa.filter(s => s.jenjang === 'MA').length;
 
-    document.getElementById('stat-total-siswa').textContent = totalSiswa;
+    const assigned = getGuruAssignedKelas();
+    let displaySiswa = State.siswa;
+
+    if (assigned && assigned.kelas) {
+      displaySiswa = State.siswa.filter(s => String(s.kelas) === String(assigned.kelas));
+      document.getElementById('stat-total-siswa').textContent = displaySiswa.length;
+      const lbl = document.querySelector('#stat-total-siswa + .stat-label');
+      if (lbl) lbl.textContent = `Siswa (Kelas ${assigned.kelas})`;
+    } else {
+      document.getElementById('stat-total-siswa').textContent = totalSiswa;
+      const lbl = document.querySelector('#stat-total-siswa + .stat-label');
+      if (lbl) lbl.textContent = 'Total Siswa';
+    }
+
     document.getElementById('stat-total-guru').textContent  = totalGuru;
     document.getElementById('stat-total-kelas').textContent = totalKelas;
 
@@ -299,7 +334,7 @@ async function renderDashboard() {
 
     // Recent students
     const recentEl = document.getElementById('recent-siswa-list');
-    const recent = State.siswa.slice(-5).reverse();
+    const recent = displaySiswa.slice(-5).reverse();
     if (recent.length === 0) {
       recentEl.innerHTML = `<div class="empty-state"><div class="empty-icon">👨‍🎓</div><p>Belum ada data siswa</p></div>`;
     } else {
@@ -409,12 +444,36 @@ async function renderSiswa() {
 }
 
 function _applySiswaFilter() {
-  const { search, jenjang, kelas, rombel } = State.filterSiswa;
+  const assigned = getGuruAssignedKelas();
   let list = [...State.siswa];
 
+  // Kunci fokus siswa pada kelas wali kelas jika guru yang login bukan admin
+  if (assigned && assigned.kelas) {
+    list = list.filter(s => String(s.kelas) === String(assigned.kelas));
+
+    const kSel = document.getElementById('siswa-filter-kelas');
+    if (kSel) {
+      kSel.value = assigned.kelas;
+      kSel.disabled = true;
+    }
+    const jSel = document.getElementById('siswa-filter-jenjang');
+    if (jSel && assigned.jenjang) {
+      jSel.value = assigned.jenjang;
+      jSel.disabled = true;
+    }
+  } else {
+    const kSel = document.getElementById('siswa-filter-kelas');
+    if (kSel) kSel.disabled = false;
+    const jSel = document.getElementById('siswa-filter-jenjang');
+    if (jSel) jSel.disabled = false;
+
+    const { jenjang, kelas } = State.filterSiswa;
+    if (jenjang) list = list.filter(s => s.jenjang === jenjang);
+    if (kelas)   list = list.filter(s => String(s.kelas) === String(kelas));
+  }
+
+  const { search, rombel } = State.filterSiswa;
   if (search)  list = list.filter(s => (s.nama + s.nis).toLowerCase().includes(search.toLowerCase()));
-  if (jenjang) list = list.filter(s => s.jenjang === jenjang);
-  if (kelas)   list = list.filter(s => s.kelas === kelas);
   if (rombel) {
     if (rombel === 'none') list = list.filter(s => !s.rombel);
     else list = list.filter(s => String(s.rombel || '').toUpperCase() === rombel.toUpperCase());
@@ -426,8 +485,8 @@ function _applySiswaFilter() {
 function renderSiswaTable(list) {
   const tbody = document.getElementById('siswa-tbody');
   if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--gray-500)">
-      Belum ada data siswa. Klik "+ Tambah Siswa" untuk menambahkan.
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--gray-500)">
+      Belum ada data siswa untuk filter yang dipilih. Tambah siswa di spreadsheet tab Siswa.
     </td></tr>`;
     return;
   }
@@ -443,7 +502,7 @@ function renderSiswaTable(list) {
           <span class="badge badge-${(s.jenjang || '').toLowerCase().replace('mts','mts')}">${escHtml(s.jenjang)}</span>
         </td>
         <td><strong>${escHtml(s.kelas)}</strong></td>
-        <td>
+        <td style="text-align:center">
           <div class="rombel-select-group" style="display:inline-flex;gap:10px;align-items:center;background:var(--gray-50);padding:4px 8px;border-radius:6px;border:1px solid var(--gray-300)">
             <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-weight:700;font-size:0.88rem;color:${currentRombel === 'A' ? 'var(--green-dark)' : 'var(--gray-700)'}">
               <input type="radio" name="rombel_radio_${s.id}" value="A" ${currentRombel === 'A' ? 'checked' : ''} onchange="markRombelDirty('${s.id}', 'A')" /> A
@@ -458,13 +517,6 @@ function renderSiswaTable(list) {
         </td>
         <td>${escHtml(s.waliKelas || '-')}</td>
         <td>${escHtml(s.namaWali || '-')}</td>
-        <td>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-outline btn-sm" onclick="openEditSiswa('${escHtml(s.id)}')">✏️ Edit</button>
-            ${Auth.isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="confirmDeleteSiswa('${escHtml(s.id)}', '${escHtml(s.nama)}')">🗑️</button>` : ''}
-            <button class="btn btn-gold btn-sm" onclick="previewRaportSiswa('${escHtml(s.id)}')">📄 Raport</button>
-          </div>
-        </td>
       </tr>
     `;
   }).join('');
@@ -881,28 +933,33 @@ async function renderNilaiControls() {
   updateNilaiKelasOptions();
   await populateNilaiMapelOptions(State.filterNilai.mapelId);
 
-  // Auto-select jika user yang login adalah Wali Kelas
-  const u = Auth.getUser();
-  if (u && (u.waliKelas || u.tugas)) {
-    const rawWk = parseTugasToWaliKelas(u.waliKelas || u.tugas);
-    const parts = rawWk.trim().split(/\s+/);
-    if (parts.length >= 1) {
-      const kelasVal = parts[0];
-      const rombelVal = parts[1] || '';
-      const num = parseInt(kelasVal, 10);
-      if (num >= 7 && num <= 9) jenjangSel.value = 'MTs';
-      else if (num >= 10 && num <= 12) jenjangSel.value = 'MA';
-      else if (num >= 1 && num <= 6) jenjangSel.value = 'MI';
-      updateNilaiKelasOptions();
-      await populateNilaiMapelOptions();
-
-      const kSel = document.getElementById('nilai-kelas-sel');
-      if (kSel) kSel.value = kelasVal;
-      const rSel = document.getElementById('nilai-rombel-sel');
-      if (rSel && rombelVal) rSel.value = rombelVal;
-      await loadNilaiSiswaList();
-      return;
+  // Auto-select & kunci filter jika user yang login adalah Wali Kelas
+  const assigned = getGuruAssignedKelas();
+  if (assigned && assigned.kelas) {
+    if (jenjangSel) {
+      jenjangSel.value = assigned.jenjang;
+      jenjangSel.disabled = true;
     }
+
+    updateNilaiKelasOptions();
+    await populateNilaiMapelOptions(State.filterNilai.mapelId);
+
+    const kSel = document.getElementById('nilai-kelas-sel');
+    if (kSel) {
+      kSel.value = assigned.kelas;
+      kSel.disabled = true;
+    }
+    const rSel = document.getElementById('nilai-rombel-sel');
+    if (rSel && assigned.rombel) {
+      rSel.value = assigned.rombel;
+    }
+
+    await loadNilaiSiswaList();
+    return;
+  } else {
+    if (jenjangSel) jenjangSel.disabled = false;
+    const kSel = document.getElementById('nilai-kelas-sel');
+    if (kSel) kSel.disabled = false;
   }
 
   // Set default class if not set
@@ -1437,6 +1494,22 @@ async function renderCetak() {
   try {
     const res = await DataService.Siswa.getAll();
     State.siswa = res.data || [];
+
+    const assigned = getGuruAssignedKelas();
+    const jSel = document.getElementById('cetak-jenjang-sel');
+    const kSel = document.getElementById('cetak-kelas-sel');
+
+    if (assigned && assigned.kelas) {
+      if (jSel) { jSel.value = assigned.jenjang; jSel.disabled = true; }
+      updateCetakKelasOptions();
+      if (kSel) { kSel.value = assigned.kelas; kSel.disabled = true; }
+      const rSel = document.getElementById('cetak-rombel-sel');
+      if (rSel && assigned.rombel) { rSel.value = assigned.rombel; }
+    } else {
+      if (jSel) jSel.disabled = false;
+      if (kSel) kSel.disabled = false;
+    }
+
     populateCetakSiswaOptions();
   } catch (e) {
     Toast.error('Gagal memuat data: ' + e.message);
@@ -1444,18 +1517,26 @@ async function renderCetak() {
 }
 
 function populateCetakSiswaOptions() {
-  const jenjang  = document.getElementById('cetak-jenjang-sel').value;
-  const kelas    = document.getElementById('cetak-kelas-sel').value;
+  const jenjang  = document.getElementById('cetak-jenjang-sel')?.value;
+  const kelas    = document.getElementById('cetak-kelas-sel')?.value;
   const rombel   = document.getElementById('cetak-rombel-sel')?.value || '';
 
   const normKelas = (str) => String(str || '').trim().toLowerCase().replace(/^kelas\s*/, '');
 
+  const assigned = getGuruAssignedKelas();
   let list = State.siswa;
-  if (jenjang) list = list.filter(s => String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase());
-  if (kelas)   list = list.filter(s => normKelas(s.kelas) === normKelas(kelas));
-  if (rombel)  list = list.filter(s => String(s.rombel || '').toUpperCase() === rombel.toUpperCase());
+
+  if (assigned && assigned.kelas) {
+    list = list.filter(s => normKelas(s.kelas) === normKelas(assigned.kelas));
+    if (rombel) list = list.filter(s => String(s.rombel || '').toUpperCase() === rombel.toUpperCase());
+  } else {
+    if (jenjang) list = list.filter(s => String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase());
+    if (kelas)   list = list.filter(s => normKelas(s.kelas) === normKelas(kelas));
+    if (rombel)  list = list.filter(s => String(s.rombel || '').toUpperCase() === rombel.toUpperCase());
+  }
 
   const sel = document.getElementById('cetak-siswa-sel');
+  if (!sel) return;
   sel.innerHTML = `<option value="">-- Pilih Siswa (${list.length} siswa) --</option>` +
     list.map(s =>
       `<option value="${escHtml(s.id)}">${escHtml(s.nama)} (${escHtml(s.nis || '-')}) - Kelas ${escHtml(s.kelas || '-')}${s.rombel ? ' ' + escHtml(s.rombel) : ''}</option>`
@@ -2777,7 +2858,8 @@ async function syncAllData(isManual = false) {
   const syncBtn = document.getElementById('btn-sync-all');
   if (syncBtn) {
     syncBtn.classList.add('loading');
-    syncBtn.innerHTML = '<span class="sync-icon">🔄</span> Menyinkronkan...';
+    const textSpan = syncBtn.querySelector('.btn-sync-text');
+    if (textSpan) textSpan.textContent = 'Menyinkronkan...';
     syncBtn.disabled = true;
   }
 
@@ -2918,7 +3000,8 @@ async function syncAllData(isManual = false) {
   } finally {
     if (syncBtn) {
       syncBtn.classList.remove('loading');
-      syncBtn.innerHTML = '<span class="sync-icon">🔄</span> Sinkronisasi Data';
+      const textSpan = syncBtn.querySelector('.btn-sync-text');
+      if (textSpan) textSpan.textContent = 'Sinkronisasi Data';
       syncBtn.disabled = false;
     }
   }
