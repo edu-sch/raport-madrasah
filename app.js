@@ -254,6 +254,7 @@ async function loadPageData(page) {
     case 'kepala':     await renderKepala(); break;
     case 'cetak':      await renderCetak(); break;
     case 'pengaturan': renderPengaturan(); break;
+    case 'akun':       await renderAkun(); break;
   }
 }
 
@@ -1219,7 +1220,14 @@ async function generateRaportPreview() {
 
 function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala) {
   const jenjangLabel = JENJANG[siswa.jenjang] || siswa.jenjang;
-  const tanggalRaport = todayIndonesian();
+
+  // Tempat & tanggal cetak dari pengaturan, atau fallback ke default
+  const tempatCetak = State.settings.tempatCetak || 'Surabaya';
+  const rawTanggal  = State.settings.tanggalCetak; // 'yyyy-mm-dd' atau ''
+  const tanggalRaport = rawTanggal
+    ? new Date(rawTanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+    : todayIndonesian();
+  const lokasiTanggal = `${tempatCetak}, ${tanggalRaport}`;
 
   // Calculate values
   const nilaiArr = mapelList
@@ -1256,13 +1264,13 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
   // Kepala info
   const kepalaHtml = kepala?.ttdUrl
     ? `<div class="sig-block has-signature">
-        <div class="sig-title">Surabaya, ${tanggalRaport}<br>${escHtml(kepala.jabatan || 'Kepala Madrasah')}</div>
+        <div class="sig-title">${lokasiTanggal}<br>${escHtml(kepala.jabatan || 'Kepala Madrasah')}</div>
         <img src="${escHtml(kepala.ttdUrl)}" class="sig-image" alt="TTD Kepala" />
         <div class="sig-name">${escHtml(kepala.nama || '')}</div>
         <div class="sig-nip">NIP. ${escHtml(kepala.nip || '-')}</div>
       </div>`
     : `<div class="sig-block">
-        <div class="sig-title">Surabaya, ${tanggalRaport}<br>${escHtml(kepala?.jabatan || 'Kepala Madrasah')}</div>
+        <div class="sig-title">${lokasiTanggal}<br>${escHtml(kepala?.jabatan || 'Kepala Madrasah')}</div>
         <div class="sig-name">${escHtml(kepala?.nama || '.........................')}</div>
         <div class="sig-nip">NIP. ${escHtml(kepala?.nip || '-')}</div>
       </div>`;
@@ -1398,7 +1406,7 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
       <div class="signature-section">
         <!-- Wali Kelas -->
         <div class="sig-block">
-          <div class="sig-title">Surabaya, ${tanggalRaport}<br>Wali Kelas</div>
+          <div class="sig-title">${lokasiTanggal}<br>Wali Kelas</div>
           <div class="sig-name">${escHtml(siswa.waliKelas || '.........................')}</div>
           <div class="sig-nip">NIP. -</div>
         </div>
@@ -1451,6 +1459,12 @@ function renderPengaturan() {
 
   const semInput = document.getElementById('setting-semester');
   if (semInput) semInput.value = s.semester || 'Ganjil';
+
+  const tempatInput = document.getElementById('setting-tempat-cetak');
+  if (tempatInput) tempatInput.value = s.tempatCetak || 'Surabaya';
+
+  const tanggalInput = document.getElementById('setting-tanggal-cetak');
+  if (tanggalInput) tanggalInput.value = s.tanggalCetak || '';
 
   updateConnectionStatus();
 }
@@ -1516,11 +1530,15 @@ async function testSheetsConnection() {
 }
 
 function savePengaturan() {
-  const ta  = document.getElementById('setting-tahun-ajaran').value.trim();
-  const sem = document.getElementById('setting-semester').value;
+  const ta      = document.getElementById('setting-tahun-ajaran').value.trim();
+  const sem     = document.getElementById('setting-semester').value;
+  const tempat  = document.getElementById('setting-tempat-cetak').value.trim() || 'Surabaya';
+  const tanggal = document.getElementById('setting-tanggal-cetak').value; // yyyy-mm-dd or ''
 
-  State.settings.tahunAjaran = ta;
-  State.settings.semester    = sem;
+  State.settings.tahunAjaran  = ta;
+  State.settings.semester     = sem;
+  State.settings.tempatCetak  = tempat;
+  State.settings.tanggalCetak = tanggal;
   saveSettings();
 
   // Update topbar display
@@ -1568,10 +1586,683 @@ function importData(input) {
   reader.readAsText(file);
 }
 
+function resetSemuaData() {
+  if (!confirm('⚠️ PERINGATAN!\n\nSeluruh data akan dihapus permanen:\n• Data Siswa\n• Nilai\n• Mata Pelajaran\n• Guru\n• Akun\n• Pengaturan\n\nApakah Anda YAKIN ingin mereset semua data?')) return;
+  if (!confirm('🗑️ Konfirmasi terakhir!\n\nData TIDAK BISA dikembalikan setelah dihapus.\n\nLanjutkan reset?')) return;
+
+  // Hapus semua key localStorage yang berhubungan dengan aplikasi
+  const keys = Object.keys(localStorage).filter(k => k.startsWith('mdb_') || k.startsWith('absen_'));
+  keys.forEach(k => localStorage.removeItem(k));
+  sessionStorage.clear();
+
+  Toast.success('Semua data berhasil dihapus. Halaman akan dimuat ulang...');
+  setTimeout(() => location.reload(), 1500);
+}
+
+
+/* ============================================================
+ * ─── AUTH MODULE ───────────────────────────────────────────
+ * ============================================================ */
+const Auth = {
+  _currentUser: null,
+  _ACCOUNTS_KEY: 'mdb_accounts',
+  _SESSION_KEY:  'mdb_session',
+
+  /** Simple hash (not cryptographic - basic protection) */
+  _hash(str) {
+    return btoa(unescape(encodeURIComponent(str + '_mdb_salt_2024')));
+  },
+
+  /** Get all accounts from LocalStorage */
+  _getAccounts() {
+    try {
+      return JSON.parse(localStorage.getItem(this._ACCOUNTS_KEY) || '[]');
+    } catch { return []; }
+  },
+
+  /** Save accounts to LocalStorage */
+  _saveAccounts(accounts) {
+    localStorage.setItem(this._ACCOUNTS_KEY, JSON.stringify(accounts));
+  },
+
+  /** Create default admin account if none exist */
+  _initDefaultAdmin() {
+    const accounts = this._getAccounts();
+    const hasAdmin = accounts.some(a => a.role === 'admin');
+    if (!hasAdmin) {
+      accounts.push({
+        id: 'admin',
+        username: 'admin',
+        namaGuru: 'Administrator',
+        role: 'admin',
+        passwordHash: this._hash('admin123'),
+        aktif: true,
+        createdAt: new Date().toISOString(),
+      });
+      this._saveAccounts(accounts);
+    }
+  },
+
+  /** Initialize auth on app start */
+  init() {
+    this._initDefaultAdmin();
+
+    // Check for saved session
+    try {
+      const session = sessionStorage.getItem(this._SESSION_KEY);
+      if (session) {
+        const user = JSON.parse(session);
+        // Verify account still exists and is active
+        const accounts = this._getAccounts();
+        const found = accounts.find(a => a.id === user.id && a.aktif);
+        if (found) {
+          this._currentUser = found;
+          this._showApp();
+          return;
+        }
+      }
+    } catch { /* ignore */ }
+
+    // Show login screen
+    this._showLogin();
+  },
+
+  /** Handle login form submit */
+  login(e) {
+    e.preventDefault();
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errEl    = document.getElementById('login-error');
+    const btnText  = document.getElementById('btn-login-text');
+    const btn      = document.getElementById('btn-login');
+
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    btnText.innerHTML = '<span class="spinner"></span> Memproses...';
+
+    // Small delay for UX
+    setTimeout(() => {
+      try {
+        const accounts = this._getAccounts();
+        const account  = accounts.find(a => a.username === username);
+
+        if (!account) {
+          this._showLoginError('Username tidak ditemukan', errEl);
+          btn.disabled = false;
+          btnText.textContent = 'Masuk';
+          return;
+        }
+
+        if (!account.aktif) {
+          this._showLoginError('Akun tidak aktif. Hubungi administrator.', errEl);
+          btn.disabled = false;
+          btnText.textContent = 'Masuk';
+          return;
+        }
+
+        if (account.passwordHash !== this._hash(password)) {
+          this._showLoginError('Password salah. Coba lagi.', errEl);
+          btn.disabled = false;
+          btnText.textContent = 'Masuk';
+          return;
+        }
+
+        // Success
+        this._currentUser = account;
+        sessionStorage.setItem(this._SESSION_KEY, JSON.stringify(account));
+        this._showApp();
+        Toast.success(`Selamat datang, ${account.namaGuru}! 👋`);
+
+      } catch (err) {
+        this._showLoginError('Terjadi kesalahan: ' + err.message, errEl);
+        btn.disabled = false;
+        btnText.textContent = 'Masuk';
+      }
+    }, 500);
+  },
+
+  /** Show login error */
+  _showLoginError(msg, errEl) {
+    errEl.innerHTML = `❌ ${escHtml(msg)}`;
+    errEl.style.display = 'flex';
+    // Shake animation
+    const input = document.getElementById('login-password');
+    input.style.borderColor = 'var(--red)';
+    setTimeout(() => { input.style.borderColor = ''; }, 2000);
+  },
+
+  /** Logout */
+  logout() {
+    if (!confirm('Apakah Anda yakin ingin keluar?')) return;
+    sessionStorage.removeItem(this._SESSION_KEY);
+    this._currentUser = null;
+    Modal.closeAll();
+    this._showLogin();
+    // Reset form
+    document.getElementById('login-username').value = '';
+    document.getElementById('login-password').value = '';
+    document.getElementById('login-error').style.display = 'none';
+    document.getElementById('btn-login').disabled = false;
+    document.getElementById('btn-login-text').textContent = 'Masuk';
+  },
+
+  /** Show the login screen */
+  _showLogin() {
+    const loginScreen = document.getElementById('login-screen');
+    const app = document.getElementById('app');
+    loginScreen.classList.remove('hidden');
+    app.style.display = 'none';
+  },
+
+  /** Show the main app */
+  _showApp() {
+    const loginScreen = document.getElementById('login-screen');
+    const app = document.getElementById('app');
+    loginScreen.classList.add('hidden');
+    app.style.display = 'flex';
+
+    // Update topbar user info
+    const u = this._currentUser;
+    if (u) {
+      const userEl   = document.getElementById('topbar-user');
+      const nameEl   = document.getElementById('topbar-user-name');
+      const roleEl   = document.getElementById('topbar-user-role');
+      const avatarEl = document.getElementById('topbar-user-avatar');
+      if (userEl) {
+        userEl.style.display = 'flex';
+        nameEl.textContent   = u.namaGuru || u.username;
+        roleEl.textContent   = u.role === 'admin' ? 'Administrator' : 'Guru';
+        avatarEl.textContent = (u.namaGuru || u.username).charAt(0).toUpperCase();
+      }
+    }
+
+    // Apply role restrictions
+    this.applyRoleRestrictions();
+  },
+
+  /** Apply UI restrictions based on role */
+  applyRoleRestrictions() {
+    const isAdmin = this.isAdmin();
+
+    // Nav items only visible to admin
+    const adminOnlyPages = ['siswa', 'mapel', 'guru', 'kepala', 'pengaturan', 'akun', 'dashboard'];
+    const guruOnlyPages  = ['nilai', 'cetak'];
+
+    document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+      const page = item.dataset.page;
+      if (isAdmin) {
+        // Admin sees everything except 'akun' which has its own toggle
+        item.style.display = '';
+      } else {
+        // Guru sees only nilai and cetak
+        item.style.display = guruOnlyPages.includes(page) ? '' : 'none';
+      }
+    });
+
+    // Akun Guru nav item only for admin
+    const navAkun = document.getElementById('nav-akun');
+    if (navAkun) navAkun.style.display = isAdmin ? '' : 'none';
+  },
+
+  /** Toggle password visibility */
+  togglePassword() {
+    const inp = document.getElementById('login-password');
+    const btn = document.getElementById('btn-show-pass');
+    if (inp.type === 'password') {
+      inp.type = 'text';
+      btn.textContent = '🙈';
+    } else {
+      inp.type = 'password';
+      btn.textContent = '👁️';
+    }
+  },
+
+  getUser()  { return this._currentUser; },
+  isAdmin()  { return this._currentUser?.role === 'admin'; },
+  isGuru()   { return this._currentUser?.role === 'guru'; },
+};
+
+/* ============================================================
+ * ─── AKUN GURU PAGE ────────────────────────────────────────
+ * ============================================================ */
+let _editingAkunId = null;
+
+async function renderAkun() {
+  const accounts = Auth._getAccounts();
+  const tbody = document.getElementById('akun-tbody');
+  if (!tbody) return;
+
+  if (!accounts.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--gray-500)">
+      Belum ada akun. Klik "+ Tambah Akun" untuk menambahkan.
+    </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = accounts.map((a, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><strong>${escHtml(a.username)}</strong></td>
+      <td>${escHtml(a.namaGuru)}</td>
+      <td><span class="badge badge-${escHtml(a.role)}">${escHtml(a.role === 'admin' ? 'Admin' : 'Guru')}</span></td>
+      <td><span class="badge badge-${a.aktif ? 'aktif' : 'nonaktif'}">${a.aktif ? 'Aktif' : 'Non-Aktif'}</span></td>
+      <td>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${a.id !== 'admin' ? `<button class="btn btn-outline btn-sm" onclick="openEditAkun('${escHtml(a.id)}')">✏️ Edit</button>` : ''}
+          ${a.id !== 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteAkun('${escHtml(a.id)}', '${escHtml(a.username)}')">🗑️</button>` : ''}
+          ${a.id === 'admin' ? `<span style="font-size:0.75rem;color:var(--gray-500)">Akun sistem</span>` : ''}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openAddAkun() {
+  if (!Auth.isAdmin()) return Toast.warning('Hanya admin yang dapat mengelola akun');
+  _editingAkunId = null;
+
+  const f = document.getElementById('form-akun');
+  f.reset();
+  document.getElementById('modal-akun-title').textContent = 'Tambah Akun Guru';
+  document.getElementById('akun-password-group').style.display = '';
+  document.getElementById('akun-konfirmasi-group').style.display = '';
+  document.getElementById('akun-ganti-password-wrap').style.display = 'none';
+  f['akun-username'].readOnly = false;
+
+  // Populate guru dropdown
+  await _populateAkunGuruDropdown('');
+
+  Modal.open('modal-akun');
+}
+
+async function openEditAkun(id) {
+  if (!Auth.isAdmin()) return Toast.warning('Hanya admin yang dapat mengelola akun');
+  const accounts = Auth._getAccounts();
+  const a = accounts.find(x => x.id === id);
+  if (!a) return Toast.error('Akun tidak ditemukan');
+
+  _editingAkunId = id;
+  document.getElementById('modal-akun-title').textContent = 'Edit Akun';
+
+  const f = document.getElementById('form-akun');
+  f.reset();
+  f['akun-username'].value  = a.username;
+  f['akun-username'].readOnly = true; // Don't allow username change
+  f['akun-role'].value      = a.role;
+  f['akun-status'].value    = a.aktif ? 'aktif' : 'nonaktif';
+
+  // Hide password fields by default for edit, show "ganti password" toggle
+  document.getElementById('akun-password-group').style.display    = 'none';
+  document.getElementById('akun-konfirmasi-group').style.display  = 'none';
+  document.getElementById('akun-ganti-password-wrap').style.display = '';
+  document.getElementById('akun-ganti-password').checked = false;
+
+  // Populate guru dropdown
+  await _populateAkunGuruDropdown(a.namaGuru);
+  f['akun-nama-guru'].value = a.namaGuru;
+
+  Modal.open('modal-akun');
+}
+
+async function _populateAkunGuruDropdown(selectedNama) {
+  const sel = document.getElementById('akun-nama-guru-select');
+  if (!sel) return;
+  try {
+    const res = await DataService.Guru.getAll();
+    const guruList = res.data || [];
+    sel.innerHTML = '<option value="">-- Pilih Guru --</option>' +
+      guruList.map(g => `<option value="${escHtml(g.nama)}" ${g.nama === selectedNama ? 'selected' : ''}>${escHtml(g.nama)}</option>`).join('');
+    // Allow manual input if not in list
+    if (selectedNama && !guruList.find(g => g.nama === selectedNama)) {
+      sel.innerHTML += `<option value="${escHtml(selectedNama)}" selected>${escHtml(selectedNama)}</option>`;
+    }
+  } catch {
+    sel.innerHTML = '<option value="">Gagal memuat data guru</option>';
+  }
+}
+
+function toggleGantiPassword(checked) {
+  document.getElementById('akun-password-group').style.display   = checked ? '' : 'none';
+  document.getElementById('akun-konfirmasi-group').style.display = checked ? '' : 'none';
+}
+
+async function saveAkun(e) {
+  e.preventDefault();
+  if (!Auth.isAdmin()) return Toast.warning('Hanya admin yang dapat mengelola akun');
+
+  const f        = document.getElementById('form-akun');
+  const username = f['akun-username'].value.trim();
+  const namaGuru = f['akun-nama-guru'].value.trim() || f['akun-nama-guru'].options[f['akun-nama-guru'].selectedIndex]?.text || username;
+  const role     = f['akun-role'].value;
+  const status   = f['akun-status'].value;
+  const pass     = f['akun-password'].value;
+  const konfirm  = f['akun-konfirmasi'].value;
+
+  if (!username) return Toast.warning('Username wajib diisi');
+  if (!namaGuru || namaGuru === '-- Pilih Guru --') return Toast.warning('Pilih nama guru');
+
+  const accounts = Auth._getAccounts();
+  const isGantiPassword = !_editingAkunId || document.getElementById('akun-ganti-password')?.checked;
+
+  if (isGantiPassword) {
+    if (!pass) return Toast.warning('Password wajib diisi');
+    if (pass.length < 6) return Toast.warning('Password minimal 6 karakter');
+    if (pass !== konfirm) return Toast.warning('Konfirmasi password tidak sesuai');
+  }
+
+  if (!_editingAkunId) {
+    // New account - check unique username
+    if (accounts.find(a => a.username === username)) {
+      return Toast.warning(`Username "${username}" sudah digunakan`);
+    }
+    const newAkun = {
+      id:           genId(),
+      username,
+      namaGuru:     namaGuru,
+      role,
+      passwordHash: Auth._hash(pass),
+      aktif:        status === 'aktif',
+      createdAt:    new Date().toISOString(),
+    };
+    accounts.push(newAkun);
+  } else {
+    const idx = accounts.findIndex(a => a.id === _editingAkunId);
+    if (idx === -1) return Toast.error('Akun tidak ditemukan');
+    accounts[idx].namaGuru = namaGuru;
+    accounts[idx].role     = role;
+    accounts[idx].aktif    = status === 'aktif';
+    accounts[idx].updatedAt = new Date().toISOString();
+    if (isGantiPassword && pass) {
+      accounts[idx].passwordHash = Auth._hash(pass);
+    }
+  }
+
+  Auth._saveAccounts(accounts);
+  Toast.success(`Akun "${username}" berhasil ${_editingAkunId ? 'diperbarui' : 'ditambahkan'}`);
+  Modal.close('modal-akun');
+  await renderAkun();
+}
+
+async function deleteAkun(id, username) {
+  if (!Auth.isAdmin()) return Toast.warning('Hanya admin yang dapat mengelola akun');
+  if (id === 'admin') return Toast.warning('Akun admin sistem tidak dapat dihapus');
+  if (!confirm(`Hapus akun "${username}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+
+  const accounts = Auth._getAccounts().filter(a => a.id !== id);
+  Auth._saveAccounts(accounts);
+  Toast.success(`Akun "${username}" berhasil dihapus`);
+  await renderAkun();
+}
+
+/* ============================================================
+ * ─── IMPORT EXCEL (SISWA) ──────────────────────────────────
+ * ============================================================ */
+let _importData = [];
+
+/** Download template Excel kosong dengan contoh data */
+function downloadTemplateSiswa() {
+  if (typeof XLSX === 'undefined') {
+    Toast.error('Library XLSX belum termuat. Coba refresh halaman.');
+    return;
+  }
+
+  const ws_data = [
+    ['No', 'Nama Lengkap', 'NISN', 'NIS', 'Tempat Lahir', 'Tanggal Lahir', 'Kelas', 'Jenjang'],
+    [1, 'Ahmad Fauzan', '1234567890', '2024001', 'Surabaya', '15/06/2013', '5', 'MI'],
+    [2, 'Siti Aisyah', '0987654321', '2024002', 'Gresik',   '22/09/2011', '7', 'MTs'],
+    [3, 'Muhammad Rizki', '1122334455', '2024003', 'Sidoarjo','01/03/2009', '10', 'MA'],
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+
+  // Set column widths
+  ws['!cols'] = [
+    { wch: 5 }, { wch: 30 }, { wch: 15 }, { wch: 12 },
+    { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 8 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Data Siswa');
+  XLSX.writeFile(wb, 'template_siswa_mdb.xlsx');
+  Toast.success('Template Excel berhasil diunduh');
+}
+
+/** Open the Import Excel modal */
+function openImportExcel() {
+  _importData = [];
+  // Reset modal state
+  document.getElementById('excel-drop-area').classList.remove('drag-over');
+  document.getElementById('excel-preview-wrap').style.display = 'none';
+  document.getElementById('excel-error').style.display = 'none';
+  document.getElementById('excel-preview-tbody').innerHTML = '';
+  document.getElementById('btn-import-excel').disabled = true;
+
+  // Reset file input
+  const fileInput = document.getElementById('excel-file-input');
+  if (fileInput) fileInput.value = '';
+
+  Modal.open('modal-import-excel');
+}
+
+/** Handle drag-and-drop */
+function handleExcelDrop(e) {
+  e.preventDefault();
+  document.getElementById('excel-drop-area').classList.remove('drag-over');
+  const file = e.dataTransfer?.files?.[0];
+  if (file) handleExcelFile(file);
+}
+
+/** Parse uploaded Excel file */
+function handleExcelFile(file) {
+  if (!file) return;
+
+  const errEl = document.getElementById('excel-error');
+  errEl.style.display = 'none';
+
+  const validTypes = [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+  ];
+  const isValidExt = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+
+  if (!isValidExt && !validTypes.includes(file.type)) {
+    errEl.innerHTML = '❌ File harus berformat .xlsx atau .xls';
+    errEl.style.display = 'flex';
+    return;
+  }
+
+  if (typeof XLSX === 'undefined') {
+    errEl.innerHTML = '❌ Library XLSX belum termuat. Coba refresh halaman.';
+    errEl.style.display = 'flex';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data  = new Uint8Array(e.target.result);
+      const wb    = XLSX.read(data, { type: 'array', cellDates: true });
+      const wsName = wb.SheetNames[0];
+      const ws    = wb.Sheets[wsName];
+      const rows  = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+      if (rows.length < 2) {
+        throw new Error('File tidak memiliki data (minimal 2 baris: header + 1 data)');
+      }
+
+      // Validate headers (row 0)
+      const headers = rows[0].map(h => String(h).trim().toLowerCase());
+      const requiredCols = ['nama'];
+      const hasRequired = requiredCols.every(col =>
+        headers.some(h => h.includes(col))
+      );
+      if (!hasRequired) {
+        throw new Error('Kolom "Nama Lengkap" tidak ditemukan. Pastikan baris pertama adalah header sesuai template.');
+      }
+
+      // Parse data rows (skip header row 0)
+      const parsed = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        // Skip empty rows
+        if (!row || row.every(cell => cell === '' || cell == null)) continue;
+
+        // Map columns: A=No, B=Nama, C=NISN, D=NIS, E=Tempat, F=Tgl, G=Kelas, H=Jenjang
+        const nama      = String(row[1] || '').trim();
+        const nisn      = String(row[2] || '').trim();
+        const nis       = String(row[3] || '').trim();
+        const tempatLahir = String(row[4] || '').trim();
+        const rawTgl    = row[5];
+        const kelas     = String(row[6] || '').trim();
+        const jenjang   = String(row[7] || '').trim().toUpperCase();
+
+        if (!nama) continue; // Skip rows without name
+
+        // Parse tanggal lahir
+        let tanggalLahir = '';
+        if (rawTgl instanceof Date) {
+          tanggalLahir = rawTgl.toISOString().split('T')[0];
+        } else if (rawTgl) {
+          const str = String(rawTgl).trim();
+          // Try dd/mm/yyyy
+          const parts = str.split('/');
+          if (parts.length === 3) {
+            const d = parts[0].padStart(2, '0');
+            const m = parts[1].padStart(2, '0');
+            const y = parts[2];
+            tanggalLahir = `${y}-${m}-${d}`;
+          } else {
+            tanggalLahir = str;
+          }
+        }
+
+        // Validate jenjang
+        const validJenjang = ['MI', 'MTS', 'MA'];
+        const jenjangNorm  = jenjang === 'MTS' ? 'MTs' : jenjang;
+
+        parsed.push({
+          _rowNum: i + 1,
+          nama,
+          nisn,
+          nis:     nis || nisn,
+          tempatLahir,
+          tanggalLahir,
+          kelas:   String(kelas),
+          jenjang: validJenjang.includes(jenjang) ? jenjangNorm : jenjang,
+        });
+      }
+
+      if (parsed.length === 0) {
+        throw new Error('Tidak ada data valid yang ditemukan di file Excel');
+      }
+
+      _importData = parsed;
+
+      // Show preview (first 5 rows)
+      const preview = parsed.slice(0, 5);
+      const tbody = document.getElementById('excel-preview-tbody');
+      tbody.innerHTML = preview.map((r, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td><strong>${escHtml(r.nama)}</strong></td>
+          <td>${escHtml(r.nisn)}</td>
+          <td>${escHtml(r.nis)}</td>
+          <td>${escHtml(r.tempatLahir)}</td>
+          <td>${escHtml(r.tanggalLahir)}</td>
+          <td>${escHtml(r.kelas)}</td>
+          <td><span class="badge badge-${(r.jenjang || '').toLowerCase().replace('mts','mts')}">${escHtml(r.jenjang)}</span></td>
+        </tr>
+      `).join('');
+
+      document.getElementById('excel-preview-count').textContent =
+        parsed.length > 5 ? `Menampilkan 5 dari ${parsed.length} baris` : `Total ${parsed.length} baris data`;
+      document.getElementById('excel-total-count').textContent =
+        `Total: ${parsed.length} siswa akan diimport`;
+
+      document.getElementById('excel-preview-wrap').style.display = 'block';
+      document.getElementById('btn-import-excel').disabled = false;
+
+    } catch (err) {
+      const errEl = document.getElementById('excel-error');
+      errEl.innerHTML = `❌ ${escHtml(err.message)}`;
+      errEl.style.display = 'flex';
+      document.getElementById('excel-preview-wrap').style.display = 'none';
+      document.getElementById('btn-import-excel').disabled = true;
+      _importData = [];
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/** Process import after user confirms */
+async function processImportSiswa() {
+  if (!_importData.length) return Toast.warning('Tidak ada data untuk diimport');
+
+  const btn = document.getElementById('btn-import-excel');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Mengimport...';
+
+  let success = 0;
+  let failed  = 0;
+
+  // Get existing siswa for dedup by NIS
+  let existing = [];
+  try {
+    const res = await DataService.Siswa.getAll();
+    existing = res.data || [];
+  } catch { /* ignore */ }
+
+  const existingNisMap = {};
+  existing.forEach(s => { if (s.nis) existingNisMap[s.nis] = s.id; });
+
+  for (const row of _importData) {
+    try {
+      const existingId = row.nis ? existingNisMap[row.nis] : null;
+      const siswa = {
+        id:            existingId || genId(),
+        nama:          row.nama,
+        nisn:          row.nisn  || '',
+        nis:           row.nis   || '',
+        jenjang:       row.jenjang || 'MI',
+        kelas:         row.kelas  || '',
+        tempatLahir:   row.tempatLahir  || '',
+        tanggalLahir:  row.tanggalLahir || '',
+        namaWali:      '',
+        waliKelas:     '',
+        alamat:        '',
+        jenisKelamin:  'L',
+        updatedAt:     new Date().toISOString(),
+        createdAt:     existingId ? undefined : new Date().toISOString(),
+      };
+      await DataService.Siswa.save(siswa);
+      success++;
+    } catch (err) {
+      console.warn(`Gagal import baris ${row._rowNum}:`, err);
+      failed++;
+    }
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '📥 Import Data';
+
+  Modal.close('modal-import-excel');
+  await renderSiswa();
+
+  if (failed === 0) {
+    Toast.success(`✅ Berhasil mengimport ${success} data siswa`);
+  } else {
+    Toast.warning(`Import selesai: ${success} berhasil, ${failed} gagal`);
+  }
+  _importData = [];
+}
+
 /* ============================================================
  * ─── INITIALIZATION ────────────────────────────────────────
  * ============================================================ */
 function initApp() {
+  // Auth: inisialisasi akun default + cek sesi (HARUS dipanggil pertama)
+  Auth.init();
+
   // Toast
   Toast.init();
 
