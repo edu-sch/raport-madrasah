@@ -384,7 +384,15 @@
             <option>7</option><option>8</option><option>9</option>
             <option>10</option><option>11</option><option>12</option>
           </select>
+          <label>Rombel:</label>
+          <select id="siswa-filter-rombel">
+            <option value="">Semua Rombel</option>
+            <option value="A">Rombel A</option>
+            <option value="B">Rombel B</option>
+            <option value="none">Belum Ada Rombel</option>
+          </select>
           <button class="btn btn-outline btn-sm" onclick="renderSiswa()">🔄 Refresh</button>
+          <button class="btn btn-primary btn-sm" id="btn-save-all-rombel" onclick="saveAllRombel()" style="margin-left:auto;font-weight:700">💾 Simpan Rombel Sekaligus</button>
         </div>
 
         <!-- Table -->
@@ -398,13 +406,14 @@
                   <th>NIS</th>
                   <th>Jenjang</th>
                   <th>Kelas</th>
+                  <th style="min-width:145px;background:#16445f">Pilih Rombel (A / B)</th>
                   <th>Wali Kelas</th>
                   <th>Nama Orang Tua/Wali</th>
                   <th>Aksi</th>
                 </tr>
               </thead>
               <tbody id="siswa-tbody">
-                <tr><td colspan="8" style="text-align:center;padding:32px;color:var(--gray-500)">
+                <tr><td colspan="9" style="text-align:center;padding:32px;color:var(--gray-500)">
                   Memuat data...
                 </td></tr>
               </tbody>
@@ -421,21 +430,31 @@
       <section id="page-nilai" class="page">
 
         <div class="section-header">
-          <h2 class="section-title">Input Nilai</h2>
+          <h2 class="section-title">Input Nilai Siswa</h2>
         </div>
 
         <div class="info-box info">
           <span>ℹ️</span>
-          <span>Pilih jenjang, kelas, semester, dan tahun ajaran, lalu klik "Tampilkan Siswa" untuk mulai mengisi nilai.</span>
+          <span>Pilih jenjang, kelas, rombel, dan <strong>Mata Pelajaran</strong>. Seluruh siswa di kelas tersebut akan tampil dalam tabel dan nilai dapat diisi sekaligus per mata pelajaran.</span>
+        </div>
+
+        <!-- Mode Tab Bar -->
+        <div class="tab-bar" style="margin-bottom:16px">
+          <button class="tab-btn active" id="tab-nilai-mapel" onclick="switchNilaiMode('mapel')">
+            📖 Input Nilai per Mata Pelajaran
+          </button>
+          <button class="tab-btn" id="tab-nilai-absen" onclick="switchNilaiMode('absen')">
+            📅 Input Rekap Kehadiran & Catatan
+          </button>
         </div>
 
         <!-- Filter -->
         <div class="card" style="margin-bottom:16px">
-          <div class="card-header"><span class="card-title">Filter Kelas</span></div>
+          <div class="card-header"><span class="card-title" id="nilai-filter-title">Filter Mata Pelajaran & Kelas</span></div>
           <div class="form-grid">
             <div class="form-group">
               <label>Jenjang</label>
-              <select id="nilai-jenjang-sel">
+              <select id="nilai-jenjang-sel" onchange="onNilaiJenjangChange()">
                 <option value="MI">MI - Madrasah Ibtidaiyah</option>
                 <option value="MTs">MTs - Madrasah Tsanawiyah</option>
                 <option value="MA">MA - Madrasah Aliyah</option>
@@ -443,13 +462,13 @@
             </div>
             <div class="form-group">
               <label>Kelas</label>
-              <select id="nilai-kelas-sel">
+              <select id="nilai-kelas-sel" onchange="loadNilaiSiswaList()">
                 <option value="">-- Pilih Kelas --</option>
               </select>
             </div>
             <div class="form-group">
               <label>Rombel</label>
-              <select id="nilai-rombel-sel">
+              <select id="nilai-rombel-sel" onchange="loadNilaiSiswaList()">
                 <option value="">Semua Rombel</option>
                 <option value="A">A</option>
                 <option value="B">B</option>
@@ -457,111 +476,37 @@
                 <option value="D">D</option>
               </select>
             </div>
+            <div class="form-group" id="nilai-mapel-form-group">
+              <label>Mata Pelajaran *</label>
+              <select id="nilai-mapel-sel" onchange="loadNilaiSiswaList()">
+                <option value="">-- Pilih Mata Pelajaran --</option>
+              </select>
+            </div>
             <div class="form-group">
               <label>Semester</label>
-              <select id="nilai-semester-sel">
+              <select id="nilai-semester-sel" onchange="loadNilaiSiswaList()">
                 <option value="Ganjil">Ganjil</option>
                 <option value="Genap">Genap</option>
               </select>
             </div>
             <div class="form-group">
               <label>Tahun Ajaran</label>
-              <input type="text" id="nilai-ta-sel" placeholder="2025/2026" />
+              <input type="text" id="nilai-ta-sel" placeholder="2025/2026" onchange="loadNilaiSiswaList()" />
             </div>
           </div>
           <div class="form-actions" style="border:none;padding:12px 0 0">
             <button class="btn btn-primary" onclick="loadNilaiSiswaList()">
-              👨‍🎓 Tampilkan Siswa
+              📋 Tampilkan Daftar Siswa
             </button>
           </div>
         </div>
 
-        <!-- Student List -->
+        <!-- Student List & Grading Table -->
         <div id="nilai-siswa-list" class="card">
           <div class="empty-state">
             <div class="empty-icon">📝</div>
-            <h3>Pilih Kelas</h3>
-            <p>Gunakan filter di atas untuk memilih kelas dan menampilkan daftar siswa.</p>
-          </div>
-        </div>
-
-        <!-- Nilai Input Panel (shown when student is selected) -->
-        <div id="nilai-input-panel" class="card" style="display:none;margin-top:16px">
-          <div class="card-header">
-            <div>
-              <span class="card-title">✏️ Isi Nilai Siswa</span>
-              <div style="font-size:0.82rem;color:var(--gray-500);margin-top:3px">
-                <strong id="nilai-siswa-name">-</strong>
-                &bull; NIS: <span id="nilai-siswa-nis">-</span>
-              </div>
-            </div>
-            <button class="btn btn-outline btn-sm" onclick="document.getElementById('nilai-input-panel').style.display='none'">
-              ✕ Tutup
-            </button>
-          </div>
-
-          <!-- Nilai Table -->
-          <div class="nilai-table-wrap">
-            <table class="nilai-table">
-              <thead>
-                <tr>
-                  <th class="no-col">No</th>
-                  <th>Mata Pelajaran</th>
-                  <th>Guru Pengampu</th>
-                  <th class="kkm-col">KKM</th>
-                  <th>Nilai Angka (0-100)</th>
-                  <th class="huruf-col">Nilai Huruf</th>
-                  <th>Predikat</th>
-                </tr>
-              </thead>
-              <tbody id="nilai-tbody">
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Absensi -->
-          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--gray-200)">
-            <h3 style="font-size:0.9rem;font-weight:700;color:var(--green-dark);margin-bottom:12px">
-              📅 Rekapitulasi Kehadiran
-            </h3>
-            <div class="absensi-grid">
-              <div class="absensi-item">
-                <label>Hadir (hari)</label>
-                <input type="number" id="absen-hadir" min="0" value="0" />
-              </div>
-              <div class="absensi-item">
-                <label>Sakit (hari)</label>
-                <input type="number" id="absen-sakit" min="0" value="0" />
-              </div>
-              <div class="absensi-item">
-                <label>Izin (hari)</label>
-                <input type="number" id="absen-izin" min="0" value="0" />
-              </div>
-              <div class="absensi-item">
-                <label>Alpa (hari)</label>
-                <input type="number" id="absen-alpa" min="0" value="0" />
-              </div>
-            </div>
-          </div>
-
-          <!-- Catatan Wali Kelas -->
-          <div style="margin-top:12px">
-            <div class="form-group">
-              <label>Catatan Wali Kelas</label>
-              <textarea id="catatan-wali-kelas" rows="3"
-                placeholder="Tuliskan catatan, komentar, atau rekomendasi untuk siswa ini..."></textarea>
-            </div>
-          </div>
-
-          <!-- Save button -->
-          <div class="form-actions" style="margin-top:12px;padding-top:12px">
-            <button class="btn btn-outline"
-              onclick="document.getElementById('nilai-input-panel').style.display='none'">
-              Batal
-            </button>
-            <button class="btn btn-primary btn-lg" id="btn-save-nilai" onclick="saveNilai()">
-              💾 Simpan Nilai
-            </button>
+            <h3>Pilih Kelas & Mata Pelajaran</h3>
+            <p>Gunakan filter di atas untuk memilih mata pelajaran dan kelas, lalu isi nilai siswa langsung pada tabel.</p>
           </div>
         </div>
 

@@ -321,6 +321,67 @@ async function renderDashboard() {
  * ─── DATA SISWA PAGE ───────────────────────────────────────
  * ============================================================ */
 let _editingSiswaId = null;
+let _pendingRombelChanges = {};
+
+function markRombelDirty(siswaId, rombelVal) {
+  _pendingRombelChanges[siswaId] = rombelVal;
+  const count = Object.keys(_pendingRombelChanges).length;
+  const btn = document.getElementById('btn-save-all-rombel');
+  if (btn) {
+    btn.innerHTML = `💾 Simpan Rombel (${count} Diubah)`;
+    btn.style.boxShadow = '0 0 0 3px rgba(212,172,13,0.5)';
+  }
+}
+
+async function saveAllRombel() {
+  const ids = Object.keys(_pendingRombelChanges);
+  if (ids.length === 0) {
+    return Toast.info('Belum ada perubahan rombel yang dipilih');
+  }
+
+  const btn = document.getElementById('btn-save-all-rombel');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
+  }
+
+  try {
+    const toUpdate = [];
+    ids.forEach(id => {
+      const siswa = State.siswa.find(s => s.id === id);
+      if (siswa) {
+        siswa.rombel = _pendingRombelChanges[id];
+        siswa.updatedAt = new Date().toISOString();
+        toUpdate.push(siswa);
+      }
+    });
+
+    if (toUpdate.length > 0) {
+      if (typeof DataService.Siswa.saveMany === 'function') {
+        await DataService.Siswa.saveMany(toUpdate);
+      } else {
+        for (const s of toUpdate) {
+          await DataService.Siswa.save(s);
+        }
+      }
+    }
+
+    Toast.success(`✅ Berhasil menyimpan rombel untuk ${toUpdate.length} siswa!`);
+    _pendingRombelChanges = {};
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '💾 Simpan Rombel Sekaligus';
+      btn.style.boxShadow = 'none';
+    }
+    _applySiswaFilter();
+  } catch (err) {
+    Toast.error('Gagal menyimpan rombel: ' + err.message);
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '💾 Simpan Rombel Sekaligus';
+    }
+  }
+}
 
 async function renderSiswa() {
   try {
@@ -333,12 +394,16 @@ async function renderSiswa() {
 }
 
 function _applySiswaFilter() {
-  const { search, jenjang, kelas } = State.filterSiswa;
+  const { search, jenjang, kelas, rombel } = State.filterSiswa;
   let list = [...State.siswa];
 
   if (search)  list = list.filter(s => (s.nama + s.nis).toLowerCase().includes(search.toLowerCase()));
   if (jenjang) list = list.filter(s => s.jenjang === jenjang);
   if (kelas)   list = list.filter(s => s.kelas === kelas);
+  if (rombel) {
+    if (rombel === 'none') list = list.filter(s => !s.rombel);
+    else list = list.filter(s => String(s.rombel || '').toUpperCase() === rombel.toUpperCase());
+  }
 
   renderSiswaTable(list);
 }
@@ -346,32 +411,48 @@ function _applySiswaFilter() {
 function renderSiswaTable(list) {
   const tbody = document.getElementById('siswa-tbody');
   if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--gray-500)">
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--gray-500)">
       Belum ada data siswa. Klik "+ Tambah Siswa" untuk menambahkan.
     </td></tr>`;
     return;
   }
 
-  tbody.innerHTML = list.map((s, i) => `
-    <tr data-id="${escHtml(s.id)}">
-      <td>${i + 1}</td>
-      <td><strong>${escHtml(s.nama)}</strong></td>
-      <td>${escHtml(s.nis)}</td>
-      <td>
-        <span class="badge badge-${(s.jenjang || '').toLowerCase().replace('mts','mts')}">${escHtml(s.jenjang)}</span>
-      </td>
-      <td>${escHtml(s.kelas)}${s.rombel ? ' ' + escHtml(s.rombel) : ''}</td>
-      <td>${escHtml(s.waliKelas || '-')}</td>
-      <td>${escHtml(s.namaWali || '-')}</td>
-      <td>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-outline btn-sm" onclick="openEditSiswa('${escHtml(s.id)}')">✏️ Edit</button>
-          ${Auth.isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="confirmDeleteSiswa('${escHtml(s.id)}', '${escHtml(s.nama)}')">🗑️</button>` : ''}
-          <button class="btn btn-gold btn-sm" onclick="previewRaportSiswa('${escHtml(s.id)}')">📄 Raport</button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = list.map((s, i) => {
+    const currentRombel = _pendingRombelChanges[s.id] !== undefined ? _pendingRombelChanges[s.id] : (s.rombel || '');
+    return `
+      <tr data-id="${escHtml(s.id)}">
+        <td>${i + 1}</td>
+        <td><strong>${escHtml(s.nama)}</strong></td>
+        <td>${escHtml(s.nis)}</td>
+        <td>
+          <span class="badge badge-${(s.jenjang || '').toLowerCase().replace('mts','mts')}">${escHtml(s.jenjang)}</span>
+        </td>
+        <td><strong>${escHtml(s.kelas)}</strong></td>
+        <td>
+          <div class="rombel-select-group" style="display:inline-flex;gap:10px;align-items:center;background:var(--gray-50);padding:4px 8px;border-radius:6px;border:1px solid var(--gray-300)">
+            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-weight:700;font-size:0.88rem;color:${currentRombel === 'A' ? 'var(--green-dark)' : 'var(--gray-700)'}">
+              <input type="radio" name="rombel_radio_${s.id}" value="A" ${currentRombel === 'A' ? 'checked' : ''} onchange="markRombelDirty('${s.id}', 'A')" /> A
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-weight:700;font-size:0.88rem;color:${currentRombel === 'B' ? 'var(--green-dark)' : 'var(--gray-700)'}">
+              <input type="radio" name="rombel_radio_${s.id}" value="B" ${currentRombel === 'B' ? 'checked' : ''} onchange="markRombelDirty('${s.id}', 'B')" /> B
+            </label>
+            <label title="Kosongkan rombel" style="display:inline-flex;align-items:center;gap:2px;cursor:pointer;font-size:0.75rem;color:var(--gray-400)">
+              <input type="radio" name="rombel_radio_${s.id}" value="" ${!currentRombel ? 'checked' : ''} onchange="markRombelDirty('${s.id}', '')" /> ✕
+            </label>
+          </div>
+        </td>
+        <td>${escHtml(s.waliKelas || '-')}</td>
+        <td>${escHtml(s.namaWali || '-')}</td>
+        <td>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-outline btn-sm" onclick="openEditSiswa('${escHtml(s.id)}')">✏️ Edit</button>
+            ${Auth.isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="confirmDeleteSiswa('${escHtml(s.id)}', '${escHtml(s.nama)}')">🗑️</button>` : ''}
+            <button class="btn btn-gold btn-sm" onclick="previewRaportSiswa('${escHtml(s.id)}')">📄 Raport</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
 function openAddSiswa() {
@@ -717,25 +798,73 @@ async function confirmDeleteGuru(id, nama) {
 }
 
 /* ============================================================
- * ─── INPUT NILAI PAGE ──────────────────────────────────────
+ * ─── INPUT NILAI PAGE (PER MATA PELAJARAN) ──────────────────
  * ============================================================ */
-let _nilaiData = {}; // Keyed by mapelId => { nilai, catatan, absen }
-let _currentNilaiSiswaId = null;
+let _nilaiMode = 'mapel'; // 'mapel' | 'absen'
+let _currentNilaiMap = {}; // siswaId => numeric grade
+let _currentAbsenMap = {}; // siswaId => { hadir, sakit, izin, alpa, catatan }
+
+function switchNilaiMode(mode) {
+  _nilaiMode = mode;
+  document.getElementById('tab-nilai-mapel')?.classList.toggle('active', mode === 'mapel');
+  document.getElementById('tab-nilai-absen')?.classList.toggle('active', mode === 'absen');
+
+  const mapelGroup = document.getElementById('nilai-mapel-form-group');
+  if (mapelGroup) mapelGroup.style.display = mode === 'mapel' ? 'flex' : 'none';
+
+  const filterTitle = document.getElementById('nilai-filter-title');
+  if (filterTitle) {
+    filterTitle.textContent = mode === 'mapel' ? 'Filter Mata Pelajaran & Kelas' : 'Filter Kelas (Rekap Kehadiran & Catatan)';
+  }
+
+  loadNilaiSiswaList();
+}
+
+async function populateNilaiMapelOptions(preferredId) {
+  const jenjang = document.getElementById('nilai-jenjang-sel')?.value || State.filterNilai.jenjang || 'MI';
+  const sel = document.getElementById('nilai-mapel-sel');
+  if (!sel) return;
+
+  if (!State.mapel || !State.mapel.length) {
+    try {
+      const res = await DataService.Mapel.getAll();
+      State.mapel = res.data || [];
+    } catch {}
+  }
+
+  const list = State.mapel
+    .filter(m => m.jenjang === jenjang)
+    .sort((a, b) => (a.urutan || 0) - (b.urutan || 0));
+
+  sel.innerHTML = '<option value="">-- Pilih Mata Pelajaran --</option>' +
+    list.map(m => `<option value="${escHtml(m.id)}">${escHtml(m.nama)} (KKM: ${m.kkm ?? 70})</option>`).join('');
+
+  if (preferredId && list.some(m => m.id === preferredId)) {
+    sel.value = preferredId;
+  } else if (list.length > 0) {
+    sel.value = list[0].id;
+  }
+}
+
+async function onNilaiJenjangChange() {
+  updateNilaiKelasOptions();
+  await populateNilaiMapelOptions();
+  loadNilaiSiswaList();
+}
 
 async function renderNilaiControls() {
-  // Populate jenjang select
   const jenjangSel = document.getElementById('nilai-jenjang-sel');
-  jenjangSel.value = State.filterNilai.jenjang;
+  if (jenjangSel) jenjangSel.value = State.filterNilai.jenjang;
 
-  // Populate semester
-  document.getElementById('nilai-semester-sel').value = State.filterNilai.semester;
+  const semSel = document.getElementById('nilai-semester-sel');
+  if (semSel) semSel.value = State.filterNilai.semester;
 
-  // Populate tahun ajaran
   const ta = State.filterNilai.tahunAjaran || State.settings.tahunAjaran || currentTahunAjaran();
-  document.getElementById('nilai-ta-sel').value = ta;
+  const taInput = document.getElementById('nilai-ta-sel');
+  if (taInput) taInput.value = ta;
 
-  // Populate kelas based on jenjang
   updateNilaiKelasOptions();
+  await populateNilaiMapelOptions(State.filterNilai.mapelId);
 
   // Auto-select jika user yang login adalah Wali Kelas
   const u = Auth.getUser();
@@ -749,28 +878,38 @@ async function renderNilaiControls() {
       else if (num >= 10 && num <= 12) jenjangSel.value = 'MA';
       else if (num >= 1 && num <= 6) jenjangSel.value = 'MI';
       updateNilaiKelasOptions();
+      await populateNilaiMapelOptions();
+
       const kSel = document.getElementById('nilai-kelas-sel');
       if (kSel) kSel.value = kelasVal;
       const rSel = document.getElementById('nilai-rombel-sel');
       if (rSel && rombelVal) rSel.value = rombelVal;
       await loadNilaiSiswaList();
+      return;
     }
+  }
+
+  // Set default class if not set
+  const kSel = document.getElementById('nilai-kelas-sel');
+  if (kSel && !kSel.value && kSel.options.length > 1) {
+    kSel.value = kSel.options[1].value;
+    await loadNilaiSiswaList();
   }
 }
 
 function updateNilaiKelasOptions() {
-  const jenjang = document.getElementById('nilai-jenjang-sel').value;
+  const jenjang = document.getElementById('nilai-jenjang-sel')?.value || 'MI';
   const kelasByJenjang = {
     MI:  ['1', '2', '3', '4', '5', '6'],
     MTs: ['7', '8', '9'],
     MA:  ['10', '11', '12'],
   };
   const kelasSel = document.getElementById('nilai-kelas-sel');
+  if (!kelasSel) return;
   const opts = kelasByJenjang[jenjang] || [];
   kelasSel.innerHTML = `<option value="">-- Pilih Kelas --</option>` +
     opts.map(k => `<option value="${k}">${k}</option>`).join('');
 
-  // Also show custom kelas
   State.kelas.filter(k => k.jenjang === jenjang).forEach(k => {
     const opt = document.createElement('option');
     opt.value = opt.textContent = k.nama;
@@ -779,276 +918,423 @@ function updateNilaiKelasOptions() {
 }
 
 async function loadNilaiSiswaList() {
-  const jenjang  = document.getElementById('nilai-jenjang-sel').value;
-  const kelas    = document.getElementById('nilai-kelas-sel').value;
+  const jenjang  = document.getElementById('nilai-jenjang-sel')?.value || 'MI';
+  const kelas    = document.getElementById('nilai-kelas-sel')?.value || '';
   const rombel   = document.getElementById('nilai-rombel-sel')?.value || '';
+  const mapelId  = document.getElementById('nilai-mapel-sel')?.value || '';
+  const semester = document.getElementById('nilai-semester-sel')?.value || 'Ganjil';
+  const ta       = document.getElementById('nilai-ta-sel')?.value || currentTahunAjaran();
 
-  if (!jenjang || !kelas) {
-    return Toast.warning('Pilih jenjang dan kelas terlebih dahulu');
-  }
+  State.filterNilai = { jenjang, kelas, rombel, mapelId, semester, tahunAjaran: ta };
 
-  State.filterNilai.jenjang  = jenjang;
-  State.filterNilai.kelas    = kelas;
-  State.filterNilai.rombel   = rombel;
-  State.filterNilai.semester = document.getElementById('nilai-semester-sel').value;
-  State.filterNilai.tahunAjaran = document.getElementById('nilai-ta-sel').value;
-
-  try {
-    // Load students for this class
-    const siswaRes = await DataService.Siswa.getAll();
-    State.siswa = siswaRes.data || [];
-
-    const normKelas = (str) => String(str || '').trim().toLowerCase().replace(/^kelas\s*/, '');
-
-    const siswaKelas = State.siswa.filter(s => {
-      const matchJenjang = String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase();
-      const matchKelas = normKelas(s.kelas) === normKelas(kelas);
-      const matchRombel = !rombel || String(s.rombel || '').toUpperCase() === rombel.toUpperCase();
-      return matchJenjang && matchKelas && matchRombel;
-    });
-
-    renderNilaiSiswaList(siswaKelas);
-  } catch (e) {
-    Toast.error('Gagal memuat data: ' + e.message);
-  }
-}
-
-function renderNilaiSiswaList(list) {
   const container = document.getElementById('nilai-siswa-list');
-  const panel = document.getElementById('nilai-input-panel');
-  panel.style.display = 'none';
+  if (!container) return;
 
-  const rombelLabel = State.filterNilai.rombel ? ` Rombel ${State.filterNilai.rombel}` : '';
-
-  if (!list.length) {
+  if (!kelas) {
     container.innerHTML = `<div class="empty-state">
-      <div class="empty-icon">👨‍🎓</div>
-      <h3>Tidak ada siswa</h3>
-      <p>Tidak ada siswa di kelas ${State.filterNilai.kelas}${rombelLabel} (${State.filterNilai.jenjang}). Tambahkan siswa terlebih dahulu.</p>
+      <div class="empty-icon">📝</div>
+      <h3>Pilih Kelas</h3>
+      <p>Pilih kelas pada filter di atas untuk menampilkan siswa.</p>
     </div>`;
     return;
   }
 
+  if (_nilaiMode === 'mapel' && !mapelId) {
+    container.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">📖</div>
+      <h3>Pilih Mata Pelajaran</h3>
+      <p>Pilih mata pelajaran yang ingin diinput nilainya pada filter di atas.</p>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--gray-500)">
+    <span class="spinner"></span> Memuat data siswa & nilai...
+  </div>`;
+
+  try {
+    if (!State.siswa || !State.siswa.length) {
+      const siswaRes = await DataService.Siswa.getAll();
+      State.siswa = siswaRes.data || [];
+    }
+
+    const normKelas = (str) => String(str || '').trim().toLowerCase().replace(/^kelas\s*/, '');
+    const siswaKelas = State.siswa.filter(s => {
+      const matchJenjang = String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase();
+      const matchKelas   = normKelas(s.kelas) === normKelas(kelas);
+      const matchRombel  = !rombel || String(s.rombel || '').toUpperCase() === rombel.toUpperCase();
+      return matchJenjang && matchKelas && matchRombel;
+    }).sort((a, b) => a.nama.localeCompare(b.nama));
+
+    if (!siswaKelas.length) {
+      const rombelStr = rombel ? ` Rombel ${rombel}` : '';
+      container.innerHTML = `<div class="empty-state">
+        <div class="empty-icon">👨‍🎓</div>
+        <h3>Tidak ada siswa</h3>
+        <p>Tidak ada siswa di kelas ${escHtml(kelas)}${escHtml(rombelStr)} (${escHtml(jenjang)}). Pastikan data siswa sudah diinput.</p>
+      </div>`;
+      return;
+    }
+
+    if (_nilaiMode === 'mapel') {
+      const mapel = State.mapel.find(m => m.id === mapelId) || { id: mapelId, nama: 'Mata Pelajaran', kkm: 70 };
+
+      let existingNilaiMap = {};
+      try {
+        const nilaiRes = await DataService.Nilai.getByKelas({ jenjang, kelas, semester, tahunAjaran: ta });
+        const allGrades = nilaiRes.data || [];
+        allGrades
+          .filter(n => n.mapelId === mapelId && n.semester === semester && n.tahunAjaran === ta)
+          .forEach(n => { existingNilaiMap[n.siswaId] = n; });
+      } catch (err) {
+        console.warn('Gagal load nilai dari server:', err);
+      }
+
+      renderNilaiPerMapel(mapel, siswaKelas, existingNilaiMap);
+    } else {
+      renderNilaiAbsen(siswaKelas);
+    }
+  } catch (err) {
+    container.innerHTML = `<div class="info-box" style="background:#ffebee;color:#b71c1c;margin:16px">
+      ❌ Gagal memuat data: ${escHtml(err.message)}
+    </div>`;
+  }
+}
+
+function renderNilaiPerMapel(mapel, siswaList, existingMap) {
+  const container = document.getElementById('nilai-siswa-list');
+  const kkm = mapel.kkm ?? 70;
+  const { kelas, rombel, semester, tahunAjaran } = State.filterNilai;
+  const rombelLabel = rombel ? ` Rombel ${rombel}` : '';
+
+  _currentNilaiMap = {};
+  siswaList.forEach(s => {
+    const existing = existingMap[s.id];
+    _currentNilaiMap[s.id] = (existing && existing.nilai !== '' && existing.nilai !== undefined) ? existing.nilai : '';
+  });
+
   container.innerHTML = `
-    <p style="font-size:0.85rem;color:var(--gray-700);margin-bottom:12px">
-      Ditemukan <strong>${list.length}</strong> siswa di kelas ${State.filterNilai.kelas}${rombelLabel} (${State.filterNilai.jenjang}).
-      Wali kelas dapat mengisi seluruh nilai mata pelajaran untuk siswa di bawah ini:
-    </p>
-    <div class="table-wrapper">
-      <table>
-        <thead><tr>
-          <th>No</th><th>Nama Siswa</th><th>NIS</th><th>Kelas / Rombel</th><th>Status Nilai</th><th>Aksi</th>
-        </tr></thead>
+    <!-- Header banner -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg, var(--green-dark), #16445f);color:#fff;border-radius:var(--radius) var(--radius) 0 0;flex-wrap:wrap;gap:12px">
+      <div>
+        <h3 style="font-size:1.1rem;margin:0;font-weight:700">📖 Nilai: ${escHtml(mapel.nama)}</h3>
+        <div style="font-size:0.82rem;color:rgba(255,255,255,0.85);margin-top:3px">
+          Kelas <strong>${escHtml(kelas)}${escHtml(rombelLabel)}</strong> &bull; Semester <strong>${escHtml(semester)}</strong> &bull; TA <strong>${escHtml(tahunAjaran)}</strong> &bull; KKM: <strong>${kkm}</strong> &bull; Total: <strong>${siswaList.length} Siswa</strong>
+        </div>
+      </div>
+      <div>
+        <button class="btn btn-gold btn-sm" onclick="saveNilaiPerMapel()">
+          💾 Simpan Nilai
+        </button>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="nilai-table-wrap">
+      <table class="nilai-table">
+        <thead>
+          <tr>
+            <th style="width:40px;text-align:center">No</th>
+            <th>Nama Siswa</th>
+            <th style="width:110px">NIS</th>
+            <th style="width:70px;text-align:center">KKM</th>
+            <th style="width:130px;text-align:center">Nilai Angka (0-100)</th>
+            <th style="width:100px;text-align:center">Nilai Huruf</th>
+            <th style="width:140px;text-align:center">Predikat</th>
+          </tr>
+        </thead>
         <tbody>
-          ${list.map((s, i) => `
-            <tr>
-              <td>${i + 1}</td>
-              <td><strong>${escHtml(s.nama)}</strong></td>
-              <td>${escHtml(s.nis || '-')}</td>
-              <td>${escHtml(s.kelas)}${s.rombel ? ' ' + escHtml(s.rombel) : ''}</td>
-              <td id="nilai-status-${escHtml(s.id)}">
-                <span style="color:var(--gray-500);font-size:0.82rem">Belum diisi</span>
-              </td>
-              <td>
-                <button class="btn btn-primary btn-sm" onclick="openNilaiInput('${escHtml(s.id)}')">
-                  ✏️ Isi Semua Nilai
-                </button>
-              </td>
-            </tr>
-          `).join('')}
+          ${siswaList.map((s, idx) => {
+            const val = _currentNilaiMap[s.id];
+            const { predikat, label } = getPredikat(val);
+            const belowKkm = val !== '' && parseFloat(val) < kkm;
+            return `
+              <tr data-siswa-id="${escHtml(s.id)}" class="${belowKkm ? 'below-kkm-row' : ''}">
+                <td style="text-align:center">${idx + 1}</td>
+                <td><strong>${escHtml(s.nama)}</strong></td>
+                <td>${escHtml(s.nis || '-')}</td>
+                <td style="text-align:center"><span class="badge badge-outline">${kkm}</span></td>
+                <td style="text-align:center">
+                  <input type="number" min="0" max="100" step="0.5"
+                    class="nilai-input"
+                    id="input_nilai_${escHtml(s.id)}"
+                    data-idx="${idx}"
+                    data-siswa-id="${escHtml(s.id)}"
+                    value="${val !== '' ? val : ''}"
+                    placeholder="0-100"
+                    oninput="onNilaiMapelInput('${escHtml(s.id)}', this.value, ${kkm})"
+                    onkeydown="onNilaiKeyDown(event, ${idx})" />
+                </td>
+                <td id="huruf_${escHtml(s.id)}" style="text-align:center;font-weight:700">
+                  ${val !== '' ? nilaiToHuruf(parseFloat(val)) : '-'}
+                </td>
+                <td id="pred_${escHtml(s.id)}" class="predikat-cell pred-${(predikat || 'x').toLowerCase()}" style="text-align:center">
+                  ${predikat !== '-' ? `${predikat} (${label})` : '-'}
+                </td>
+              </tr>
+            `;
+          }).join('')}
         </tbody>
       </table>
+    </div>
+
+    <!-- Footer with class avg & Big Save button -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-top:1px solid var(--gray-200);flex-wrap:wrap;gap:14px;background:var(--gray-50);border-radius:0 0 var(--radius) var(--radius)">
+      <div>
+        <span style="font-size:0.85rem;color:var(--gray-600)">Rata-rata Nilai Siswa (${escHtml(mapel.nama)}):</span>
+        <strong id="nilai-kelas-avg" style="font-size:1.15rem;color:var(--green-dark);margin-left:8px">-</strong>
+      </div>
+      <button class="btn btn-primary btn-lg" id="btn-save-nilai-mapel" onclick="saveNilaiPerMapel()">
+        💾 Simpan Semua Nilai ${escHtml(mapel.nama)}
+      </button>
+    </div>
+  `;
+
+  recalcMapelAverage();
+}
+
+function onNilaiMapelInput(siswaId, value, kkm) {
+  _currentNilaiMap[siswaId] = value;
+  const n = parseFloat(value);
+  const isValid = value !== '' && !isNaN(n) && n >= 0 && n <= 100;
+
+  const { predikat, label } = getPredikat(isValid ? n : '');
+
+  const hurufEl = document.getElementById(`huruf_${siswaId}`);
+  if (hurufEl) hurufEl.textContent = isValid ? nilaiToHuruf(n) : '-';
+
+  const predEl = document.getElementById(`pred_${siswaId}`);
+  if (predEl) {
+    predEl.className = `predikat-cell pred-${(predikat || 'x').toLowerCase()}`;
+    predEl.textContent = predikat !== '-' ? `${predikat} (${label})` : '-';
+  }
+
+  const row = document.querySelector(`tr[data-siswa-id="${siswaId}"]`);
+  if (row) {
+    row.classList.toggle('below-kkm-row', isValid && n < kkm);
+  }
+
+  recalcMapelAverage();
+}
+
+function onNilaiKeyDown(e, idx) {
+  if (e.key === 'Enter' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    const next = document.querySelector(`input.nilai-input[data-idx="${idx + 1}"]`);
+    if (next) {
+      next.focus();
+      next.select();
+    }
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    const prev = document.querySelector(`input.nilai-input[data-idx="${idx - 1}"]`);
+    if (prev) {
+      prev.focus();
+      prev.select();
+    }
+  }
+}
+
+function recalcMapelAverage() {
+  const vals = Object.values(_currentNilaiMap)
+    .filter(v => v !== '' && v !== undefined && !isNaN(parseFloat(v)))
+    .map(v => parseFloat(v));
+
+  const avgEl = document.getElementById('nilai-kelas-avg');
+  if (avgEl) {
+    avgEl.textContent = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : '-';
+  }
+}
+
+async function saveNilaiPerMapel() {
+  const mapelId  = document.getElementById('nilai-mapel-sel')?.value;
+  const jenjang  = State.filterNilai.jenjang;
+  const kelas    = State.filterNilai.kelas;
+  const semester = State.filterNilai.semester;
+  const ta       = State.filterNilai.tahunAjaran;
+
+  const mapel = State.mapel.find(m => m.id === mapelId);
+  if (!mapel) return Toast.warning('Mata pelajaran tidak valid');
+
+  const btnTop = document.querySelector('#nilai-siswa-list .btn-gold');
+  const btnBottom = document.getElementById('btn-save-nilai-mapel');
+  if (btnTop) { btnTop.disabled = true; btnTop.innerHTML = '<span class="spinner"></span> Menyimpan...'; }
+  if (btnBottom) { btnBottom.disabled = true; btnBottom.innerHTML = '<span class="spinner"></span> Menyimpan...'; }
+
+  try {
+    const cleanTa = ta.replace(/\//g, '-');
+    const records = [];
+
+    Object.entries(_currentNilaiMap).forEach(([siswaId, val]) => {
+      if (val === '' || val === undefined || isNaN(parseFloat(val))) return;
+      records.push({
+        id:          `nil_${siswaId}_${mapelId}_${semester}_${cleanTa}`,
+        siswaId,
+        mapelId,
+        mapelNama:   mapel.nama,
+        guru:        '',
+        nilai:       parseFloat(val),
+        jenjang,
+        kelas,
+        semester,
+        tahunAjaran: ta,
+        updatedAt:   new Date().toISOString(),
+      });
+    });
+
+    if (records.length === 0) {
+      Toast.info('Tidak ada nilai yang diisi untuk disimpan');
+      return;
+    }
+
+    if (typeof DataService.Nilai.saveMany === 'function') {
+      await DataService.Nilai.saveMany(records);
+    } else {
+      for (const rec of records) {
+        await DataService.Nilai.save(rec);
+      }
+    }
+
+    Toast.success(`✅ Berhasil menyimpan nilai "${mapel.nama}" untuk ${records.length} siswa!`);
+  } catch (err) {
+    Toast.error('Gagal menyimpan nilai: ' + err.message);
+  } finally {
+    if (btnTop) { btnTop.disabled = false; btnTop.innerHTML = '💾 Simpan Nilai'; }
+    if (btnBottom) { btnBottom.disabled = false; btnBottom.innerHTML = `💾 Simpan Semua Nilai ${escHtml(mapel.nama)}`; }
+  }
+}
+
+function renderNilaiAbsen(siswaList) {
+  const container = document.getElementById('nilai-siswa-list');
+  const { kelas, rombel, semester, tahunAjaran } = State.filterNilai;
+  const rombelLabel = rombel ? ` Rombel ${rombel}` : '';
+
+  _currentAbsenMap = {};
+  siswaList.forEach(s => {
+    const key = `absen_${s.id}_${semester}_${tahunAjaran}`;
+    let data = { hadir: 0, sakit: 0, izin: 0, alpa: 0, catatan: '' };
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored) data = JSON.parse(stored);
+    } catch {}
+    _currentAbsenMap[s.id] = data;
+  });
+
+  container.innerHTML = `
+    <!-- Header banner -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg, var(--green-dark), #16445f);color:#fff;border-radius:var(--radius) var(--radius) 0 0;flex-wrap:wrap;gap:12px">
+      <div>
+        <h3 style="font-size:1.1rem;margin:0;font-weight:700">📅 Rekap Kehadiran & Catatan Siswa</h3>
+        <div style="font-size:0.82rem;color:rgba(255,255,255,0.85);margin-top:3px">
+          Kelas <strong>${escHtml(kelas)}${escHtml(rombelLabel)}</strong> &bull; Semester <strong>${escHtml(semester)}</strong> &bull; TA <strong>${escHtml(tahunAjaran)}</strong> &bull; Total: <strong>${siswaList.length} Siswa</strong>
+        </div>
+      </div>
+      <div>
+        <button class="btn btn-gold btn-sm" onclick="saveNilaiAbsen()">
+          💾 Simpan Kehadiran
+        </button>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrapper">
+      <table class="nilai-table">
+        <thead>
+          <tr>
+            <th style="width:40px;text-align:center">No</th>
+            <th>Nama Siswa</th>
+            <th style="width:100px">NIS</th>
+            <th style="width:75px;text-align:center">Hadir</th>
+            <th style="width:75px;text-align:center">Sakit</th>
+            <th style="width:75px;text-align:center">Izin</th>
+            <th style="width:75px;text-align:center">Alpa</th>
+            <th style="min-width:240px">Catatan Wali Kelas</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${siswaList.map((s, idx) => {
+            const a = _currentAbsenMap[s.id] || { hadir: 0, sakit: 0, izin: 0, alpa: 0, catatan: '' };
+            return `
+              <tr>
+                <td style="text-align:center">${idx + 1}</td>
+                <td><strong>${escHtml(s.nama)}</strong></td>
+                <td>${escHtml(s.nis || '-')}</td>
+                <td>
+                  <input type="number" min="0" class="nilai-input" style="width:65px !important"
+                    id="absen_h_${escHtml(s.id)}" value="${a.hadir ?? 0}" />
+                </td>
+                <td>
+                  <input type="number" min="0" class="nilai-input" style="width:65px !important"
+                    id="absen_s_${escHtml(s.id)}" value="${a.sakit ?? 0}" />
+                </td>
+                <td>
+                  <input type="number" min="0" class="nilai-input" style="width:65px !important"
+                    id="absen_i_${escHtml(s.id)}" value="${a.izin ?? 0}" />
+                </td>
+                <td>
+                  <input type="number" min="0" class="nilai-input" style="width:65px !important"
+                    id="absen_a_${escHtml(s.id)}" value="${a.alpa ?? 0}" />
+                </td>
+                <td>
+                  <input type="text" id="catatan_${escHtml(s.id)}"
+                    value="${escHtml(a.catatan || '')}"
+                    placeholder="Catatan perkembangan siswa..." />
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;padding:16px 20px;border-top:1px solid var(--gray-200);background:var(--gray-50);border-radius:0 0 var(--radius) var(--radius)">
+      <button class="btn btn-primary btn-lg" id="btn-save-absen" onclick="saveNilaiAbsen()">
+        💾 Simpan Rekap Kehadiran & Catatan
+      </button>
     </div>
   `;
 }
 
-async function openNilaiInput(siswaId) {
-  _currentNilaiSiswaId = siswaId;
-  const siswa = State.siswa.find(s => s.id === siswaId);
-  if (!siswa) return Toast.error('Data siswa tidak ditemukan');
-
-  // Load mapel for this jenjang
-  const mapelRes = await DataService.Mapel.getAll();
-  State.mapel = mapelRes.data || [];
-  const mapelList = State.mapel
-    .filter(m => m.jenjang === State.filterNilai.jenjang)
-    .sort((a, b) => (a.urutan || 0) - (b.urutan || 0));
-
-  if (!mapelList.length) {
-    return Toast.warning('Belum ada mata pelajaran untuk jenjang ini. Atur di menu Mata Pelajaran.');
-  }
-
-  // Load existing nilai for this student
-  let existingNilai = {};
-  try {
-    const nilaiRes = await DataService.Nilai.getBySiswa(siswaId);
-    const nilaiArr = nilaiRes.data || [];
-    const semester = State.filterNilai.semester;
-    const ta       = State.filterNilai.tahunAjaran;
-    nilaiArr
-      .filter(n => n.semester === semester && n.tahunAjaran === ta)
-      .forEach(n => { existingNilai[n.mapelId] = n; });
-  } catch {}
-
-  _nilaiData = { ...existingNilai };
-
-  // Render the input panel
-  const panel = document.getElementById('nilai-input-panel');
-  panel.style.display = 'block';
-
-  document.getElementById('nilai-siswa-name').textContent = siswa.nama;
-  document.getElementById('nilai-siswa-nis').textContent  = siswa.nis;
-
-  renderNilaiTable(mapelList, existingNilai);
-  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function renderNilaiTable(mapelList, existing) {
-  const tbody = document.getElementById('nilai-tbody');
-
-  tbody.innerHTML = mapelList.map((m, i) => {
-    const n = existing[m.id] || {};
-    const nilai = n.nilai ?? '';
-    const { predikat, label } = getPredikat(nilai);
-    const kkm = m.kkm ?? 70;
-    const belowKkm = nilai !== '' && parseFloat(nilai) < kkm;
-
-    return `
-      <tr data-mapel-id="${escHtml(m.id)}" ${belowKkm ? 'class="below-kkm-row"' : ''}>
-        <td class="no-col">${i + 1}</td>
-        <td><strong>${escHtml(m.nama)}</strong></td>
-        <td>${escHtml(m.guru || '-')}</td>
-        <td class="kkm-col">${escHtml(kkm)}</td>
-        <td>
-          <input type="number" min="0" max="100" step="0.5"
-            class="nilai-input" value="${escHtml(nilai)}"
-            placeholder="0-100"
-            onchange="onNilaiChange('${escHtml(m.id)}', this.value, ${escHtml(kkm)})"
-            oninput="onNilaiChange('${escHtml(m.id)}', this.value, ${escHtml(kkm)})" />
-        </td>
-        <td class="huruf-col" id="huruf-${escHtml(m.id)}">${nilai !== '' ? nilaiToHuruf(parseFloat(nilai)) : '-'}</td>
-        <td class="pred-col predikat-cell pred-${(predikat || 'x').toLowerCase()}"
-          id="pred-${escHtml(m.id)}">${predikat !== '-' ? predikat + ' (' + label + ')' : '-'}</td>
-      </tr>
-    `;
-  }).join('');
-
-  // Average row
-  const vals = mapelList
-    .map(m => _nilaiData[m.id]?.nilai)
-    .filter(v => v !== undefined && v !== '');
-  const rataRata = vals.length ? (vals.reduce((a, b) => a + parseFloat(b), 0) / vals.length).toFixed(2) : '-';
-
-  tbody.innerHTML += `
-    <tr class="avg-row">
-      <td colspan="4" style="text-align:right;font-weight:700">Rata-rata Nilai:</td>
-      <td class="angka-col" id="avg-nilai" colspan="3" style="font-weight:800;font-size:1rem">
-        ${rataRata}
-      </td>
-    </tr>
-  `;
-}
-
-function onNilaiChange(mapelId, value, kkm) {
-  const n = parseFloat(value);
-  const { predikat, label } = getPredikat(n);
-
-  // Update state
-  if (!_nilaiData[mapelId]) _nilaiData[mapelId] = {};
-  _nilaiData[mapelId].nilai = value === '' ? '' : n;
-  _nilaiData[mapelId].mapelId = mapelId;
-
-  // Update huruf
-  const hurufEl = document.getElementById(`huruf-${mapelId}`);
-  if (hurufEl) hurufEl.textContent = value !== '' ? nilaiToHuruf(n) : '-';
-
-  // Update predikat
-  const predEl = document.getElementById(`pred-${mapelId}`);
-  if (predEl) {
-    predEl.className = `pred-col predikat-cell pred-${(predikat || 'x').toLowerCase()}`;
-    predEl.textContent = predikat !== '-' ? `${predikat} (${label})` : '-';
-  }
-
-  // Update below kkm highlight
-  const row = document.querySelector(`tr[data-mapel-id="${mapelId}"]`);
-  if (row) {
-    row.classList.toggle('below-kkm-row', value !== '' && n < kkm);
-  }
-
-  // Recalculate average
-  const allVals = Object.values(_nilaiData)
-    .map(d => d.nilai)
-    .filter(v => v !== '' && v !== undefined && !isNaN(v));
-  const avgEl = document.getElementById('avg-nilai');
-  if (avgEl) {
-    avgEl.textContent = allVals.length
-      ? (allVals.reduce((a, b) => a + parseFloat(b), 0) / allVals.length).toFixed(2)
-      : '-';
-  }
-}
-
-async function saveNilai() {
-  const siswaId  = _currentNilaiSiswaId;
-  const semester = State.filterNilai.semester;
-  const ta       = State.filterNilai.tahunAjaran;
-  const jenjang  = State.filterNilai.jenjang;
-  const kelas    = State.filterNilai.kelas;
-
-  const mapelList = State.mapel.filter(m => m.jenjang === jenjang);
-  const dataArray = mapelList.map(m => ({
-    id:           _nilaiData[m.id]?.id || genId(),
-    siswaId,
-    mapelId:      m.id,
-    mapelNama:    m.nama,
-    guru:         m.guru || '',
-    nilai:        _nilaiData[m.id]?.nilai ?? '',
-    jenjang,
-    kelas,
-    semester,
-    tahunAjaran:  ta,
-    updatedAt:    new Date().toISOString(),
-  })).filter(n => n.nilai !== '');
-
-  // Save absensi too
-  const absen = {
-    id:          `abs_${siswaId}_${semester}_${ta}`,
-    siswaId,
-    jenis:       'absensi',
-    hadir:       parseInt(document.getElementById('absen-hadir')?.value || 0),
-    sakit:       parseInt(document.getElementById('absen-sakit')?.value || 0),
-    izin:        parseInt(document.getElementById('absen-izin')?.value  || 0),
-    alpa:        parseInt(document.getElementById('absen-alpa')?.value  || 0),
-    semester,
-    tahunAjaran: ta,
-    kelas,
-    jenjang,
-    catatan:     document.getElementById('catatan-wali-kelas')?.value || '',
-  };
-
-  // Persist absensi to localStorage always (for fast access)
-  const absenKey = `absen_${siswaId}_${semester}_${ta}`;
-  localStorage.setItem(absenKey, JSON.stringify(absen));
-
-  const btn = document.getElementById('btn-save-nilai');
-  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
+async function saveNilaiAbsen() {
+  const { kelas, jenjang, semester, tahunAjaran } = State.filterNilai;
+  const btn = document.getElementById('btn-save-absen');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menyimpan...'; }
 
   try {
-    await DataService.Nilai.saveMany(dataArray);
-    Toast.success('Nilai berhasil disimpan');
+    let count = 0;
+    Object.keys(_currentAbsenMap).forEach(siswaId => {
+      const hadir   = parseInt(document.getElementById(`absen_h_${siswaId}`)?.value || 0);
+      const sakit   = parseInt(document.getElementById(`absen_s_${siswaId}`)?.value || 0);
+      const izin    = parseInt(document.getElementById(`absen_i_${siswaId}`)?.value || 0);
+      const alpa    = parseInt(document.getElementById(`absen_a_${siswaId}`)?.value || 0);
+      const catatan = document.getElementById(`catatan_${siswaId}`)?.value || '';
 
-    // Update status in list
-    const statusEl = document.getElementById(`nilai-status-${siswaId}`);
-    if (statusEl) {
-      statusEl.innerHTML = `<span style="color:var(--green-ok);font-size:0.82rem">✅ Sudah diisi (${dataArray.length} mapel)</span>`;
-    }
+      const record = {
+        id:          `abs_${siswaId}_${semester}_${tahunAjaran}`,
+        siswaId,
+        jenis:       'absensi',
+        hadir,
+        sakit,
+        izin,
+        alpa,
+        semester,
+        tahunAjaran,
+        kelas,
+        jenjang,
+        catatan,
+      };
 
-    // Close panel
-    document.getElementById('nilai-input-panel').style.display = 'none';
-    _currentNilaiSiswaId = null;
-  } catch (e) {
-    Toast.error('Gagal menyimpan nilai: ' + e.message);
+      const absenKey = `absen_${siswaId}_${semester}_${tahunAjaran}`;
+      localStorage.setItem(absenKey, JSON.stringify(record));
+      _currentAbsenMap[siswaId] = record;
+      count++;
+    });
+
+    Toast.success(`✅ Rekap kehadiran & catatan untuk ${count} siswa berhasil disimpan!`);
+  } catch (err) {
+    Toast.error('Gagal menyimpan rekap kehadiran: ' + err.message);
   } finally {
-    btn.disabled = false; btn.innerHTML = '💾 Simpan Nilai';
+    if (btn) { btn.disabled = false; btn.innerHTML = '💾 Simpan Rekap Kehadiran & Catatan'; }
   }
 }
 
@@ -2453,7 +2739,7 @@ function initApp() {
   });
 
   // Jenjang change in nilai filter
-  document.getElementById('nilai-jenjang-sel')?.addEventListener('change', updateNilaiKelasOptions);
+  document.getElementById('nilai-jenjang-sel')?.addEventListener('change', onNilaiJenjangChange);
 
   // Cetak jenjang change
   document.getElementById('cetak-jenjang-sel')?.addEventListener('change', updateCetakKelasOptions);
@@ -2469,6 +2755,10 @@ function initApp() {
   });
   document.getElementById('siswa-filter-kelas')?.addEventListener('change', function() {
     State.filterSiswa.kelas = this.value;
+    _applySiswaFilter();
+  });
+  document.getElementById('siswa-filter-rombel')?.addEventListener('change', function() {
+    State.filterSiswa.rombel = this.value;
     _applySiswaFilter();
   });
 
