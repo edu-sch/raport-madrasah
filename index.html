@@ -63,10 +63,42 @@
         <span>💡</span>
         <span>Hubungi administrator jika lupa password</span>
       </div>
+
+      <div style="text-align:center;margin-top:14px">
+        <button type="button" class="btn btn-outline btn-sm" onclick="Auth.openServerConfig()" style="font-size:0.75rem;padding:5px 12px;border-color:var(--gray-300);color:var(--gray-600);border-radius:20px">
+          ⚙️ Sambungkan Google Sheets (HP Baru)
+        </button>
+      </div>
     </div>
 
     <div class="login-footer">
       © 2024 Madrasah Diniah Darul Barokah Surabaya
+    </div>
+  </div>
+</div>
+
+<!-- Modal Server Config (Bisa dibuka dari Login Screen) -->
+<div id="modal-server-config" class="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">⚙️ Sambungkan Google Sheets</span>
+      <button class="modal-close" data-modal-close>✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:0.84rem;color:var(--gray-600);margin-bottom:12px;line-height:1.5">
+        Jika Anda membuka aplikasi ini dari HP atau perangkat baru, tempelkan <strong>URL Web App Google Apps Script</strong> di bawah agar akun guru dan data nilai tersinkronkan otomatis dari Google Spreadsheet:
+      </p>
+      <div class="form-group">
+        <label>URL Google Apps Script (/exec)</label>
+        <input type="url" id="login-sheets-url-input" placeholder="https://script.google.com/macros/s/.../exec" />
+      </div>
+      <div id="login-server-status" style="margin-top:10px;font-size:0.84rem;display:none;padding:8px 12px;border-radius:6px;background:var(--gray-100)"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline" data-modal-close>Tutup</button>
+      <button type="button" class="btn btn-primary" id="btn-save-login-server" onclick="Auth.saveServerConfig()">
+        🔗 Sambungkan & Unduh Akun
+      </button>
     </div>
   </div>
 </div>

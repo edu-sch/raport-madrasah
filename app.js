@@ -2001,8 +2001,67 @@ const Auth = {
     }
   },
 
+  /** Open Server Config modal from login screen */
+  openServerConfig() {
+    const input = document.getElementById('login-sheets-url-input');
+    const curr = (typeof SheetsAPI !== 'undefined' && SheetsAPI.getUrl()) || State.settings.sheetsUrl || '';
+    if (input) input.value = curr;
+    const status = document.getElementById('login-server-status');
+    if (status) status.style.display = 'none';
+    Modal.open('modal-server-config');
+  },
+
+  /** Save Server Config and sync accounts */
+  async saveServerConfig() {
+    const input = document.getElementById('login-sheets-url-input');
+    const url = input?.value.trim();
+    const status = document.getElementById('login-server-status');
+    const btn = document.getElementById('btn-save-login-server');
+
+    if (!url) {
+      if (status) {
+        status.innerHTML = '<span style="color:#b71c1c">❌ Masukkan URL Web App Google Apps Script</span>';
+        status.style.display = 'block';
+      }
+      return;
+    }
+
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menghubungkan...'; }
+
+    try {
+      await SheetsAPI.setUrl(url);
+      await SheetsAPI.testConnection();
+
+      // Simpan ke settings
+      State.settings.sheetsUrl = url;
+      saveSettings();
+
+      // Unduh akun
+      await this.syncFromSheets();
+      const accounts = this._getAccounts();
+
+      if (status) {
+        status.innerHTML = `<span style="color:var(--green-ok);font-weight:600">✅ Berhasil terhubung! ${accounts.length} akun tersinkronkan. Silakan tutup dan login.</span>`;
+        status.style.display = 'block';
+      }
+
+      setTimeout(() => {
+        Modal.close('modal-server-config');
+        Toast.success('Google Sheets terhubung! Silakan login dengan akun guru Anda.');
+      }, 1500);
+
+    } catch (err) {
+      if (status) {
+        status.innerHTML = `<span style="color:#b71c1c">❌ Gagal terhubung: ${escHtml(err.message)}</span>`;
+        status.style.display = 'block';
+      }
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = '🔗 Sambungkan & Unduh Akun'; }
+    }
+  },
+
   /** Handle login form submit */
-  login(e) {
+  async login(e) {
     e.preventDefault();
     const username = document.getElementById('login-username').value.trim();
     const password = document.getElementById('login-password').value;
@@ -2014,55 +2073,70 @@ const Auth = {
     btn.disabled = true;
     btnText.innerHTML = '<span class="spinner"></span> Memproses...';
 
-    // Small delay for UX
-    setTimeout(() => {
-      try {
-        const accounts = this._getAccounts();
-        const account  = accounts.find(a => a.username === username);
+    try {
+      let accounts = this._getAccounts();
+      let account  = accounts.find(a => a.username.toLowerCase() === username.toLowerCase());
 
-        if (!account) {
-          this._showLoginError('Username tidak ditemukan', errEl);
-          btn.disabled = false;
-          btnText.textContent = 'Masuk';
-          return;
+      // Jika akun tidak ditemukan secara lokal, coba sinkronkan dari Google Sheets jika URL ada
+      if (!account && typeof SheetsAPI !== 'undefined' && SheetsAPI.getUrl()) {
+        try {
+          await this.syncFromSheets();
+          accounts = this._getAccounts();
+          account  = accounts.find(a => a.username.toLowerCase() === username.toLowerCase());
+        } catch (syncErr) {
+          console.warn('Gagal sync akun saat login:', syncErr);
         }
+      }
 
-        if (!account.aktif) {
-          this._showLoginError('Akun tidak aktif. Hubungi administrator.', errEl);
-          btn.disabled = false;
-          btnText.textContent = 'Masuk';
-          return;
-        }
-
-        if (account.passwordHash !== this._hash(password)) {
-          this._showLoginError('Password salah. Coba lagi.', errEl);
-          btn.disabled = false;
-          btnText.textContent = 'Masuk';
-          return;
-        }
-
-        // Success
-        this._currentUser = account;
-        sessionStorage.setItem(this._SESSION_KEY, JSON.stringify(account));
-        this._showApp();
-        Toast.success(`Selamat datang, ${account.namaGuru}! 👋`);
-
-      } catch (err) {
-        this._showLoginError('Terjadi kesalahan: ' + err.message, errEl);
+      if (!account) {
+        const hasSheets = typeof SheetsAPI !== 'undefined' && SheetsAPI.isConnected();
+        const hint = !hasSheets
+          ? '<br><small style="margin-top:6px;display:block;font-size:0.75rem;color:var(--gray-600)">Perangkat ini belum tersambung ke Google Sheets. Klik tombol <b>"⚙️ Sambungkan Google Sheets (HP Baru)"</b> di bawah.</small>'
+          : '';
+        this._showLoginError('Username tidak ditemukan.' + hint, errEl);
         btn.disabled = false;
         btnText.textContent = 'Masuk';
+        return;
       }
-    }, 500);
+
+      if (!account.aktif) {
+        this._showLoginError('Akun tidak aktif. Hubungi administrator.', errEl);
+        btn.disabled = false;
+        btnText.textContent = 'Masuk';
+        return;
+      }
+
+      if (account.passwordHash !== this._hash(password)) {
+        this._showLoginError('Password salah. Coba lagi.', errEl);
+        btn.disabled = false;
+        btnText.textContent = 'Masuk';
+        return;
+      }
+
+      // Success
+      this._currentUser = account;
+      sessionStorage.setItem(this._SESSION_KEY, JSON.stringify(account));
+      this._showApp();
+      Toast.success(`Selamat datang, ${account.namaGuru}! 👋`);
+
+    } catch (err) {
+      this._showLoginError('Terjadi kesalahan: ' + err.message, errEl);
+    } finally {
+      btn.disabled = false;
+      btnText.textContent = 'Masuk';
+    }
   },
 
   /** Show login error */
   _showLoginError(msg, errEl) {
-    errEl.innerHTML = `❌ ${escHtml(msg)}`;
+    errEl.innerHTML = `❌ ${msg}`;
     errEl.style.display = 'flex';
     // Shake animation
     const input = document.getElementById('login-password');
-    input.style.borderColor = 'var(--red)';
-    setTimeout(() => { input.style.borderColor = ''; }, 2000);
+    if (input) {
+      input.style.borderColor = 'var(--red)';
+      setTimeout(() => { input.style.borderColor = ''; }, 2000);
+    }
   },
 
   /** Logout */
