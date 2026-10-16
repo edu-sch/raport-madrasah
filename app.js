@@ -795,8 +795,11 @@ async function loadNilaiSiswaList() {
     const siswaRes = await DataService.Siswa.getAll();
     State.siswa = siswaRes.data || [];
 
+    const normKelas = (str) => String(str || '').trim().toLowerCase().replace(/^kelas\s*/, '');
+
     const siswaKelas = State.siswa.filter(s =>
-      s.jenjang === jenjang && s.kelas === kelas
+      String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase() &&
+      normKelas(s.kelas) === normKelas(kelas)
     );
 
     renderNilaiSiswaList(siswaKelas);
@@ -1127,14 +1130,16 @@ function populateCetakSiswaOptions() {
   const jenjang  = document.getElementById('cetak-jenjang-sel').value;
   const kelas    = document.getElementById('cetak-kelas-sel').value;
 
+  const normKelas = (str) => String(str || '').trim().toLowerCase().replace(/^kelas\s*/, '');
+
   let list = State.siswa;
-  if (jenjang) list = list.filter(s => s.jenjang === jenjang);
-  if (kelas)   list = list.filter(s => s.kelas === kelas);
+  if (jenjang) list = list.filter(s => String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase());
+  if (kelas)   list = list.filter(s => normKelas(s.kelas) === normKelas(kelas));
 
   const sel = document.getElementById('cetak-siswa-sel');
-  sel.innerHTML = `<option value="">-- Pilih Siswa --</option>` +
+  sel.innerHTML = `<option value="">-- Pilih Siswa (${list.length} siswa) --</option>` +
     list.map(s =>
-      `<option value="${escHtml(s.id)}">${escHtml(s.nama)} (${escHtml(s.nis)}) - Kelas ${escHtml(s.kelas)}</option>`
+      `<option value="${escHtml(s.id)}">${escHtml(s.nama)} (${escHtml(s.nis || '-')}) - Kelas ${escHtml(s.kelas || '-')}</option>`
     ).join('');
 }
 
@@ -1803,24 +1808,27 @@ const Auth = {
   applyRoleRestrictions() {
     const isAdmin = this.isAdmin();
 
-    // Nav items only visible to admin
-    const adminOnlyPages = ['siswa', 'mapel', 'guru', 'kepala', 'pengaturan', 'akun', 'dashboard'];
-    const guruOnlyPages  = ['nilai', 'cetak'];
+    // Halaman yang bisa diakses oleh akun Guru: Dashboard, Data Siswa, Input Nilai, Cetak Raport
+    const guruAllowedPages = ['dashboard', 'siswa', 'nilai', 'cetak'];
 
     document.querySelectorAll('.nav-item[data-page]').forEach(item => {
       const page = item.dataset.page;
       if (isAdmin) {
-        // Admin sees everything except 'akun' which has its own toggle
         item.style.display = '';
       } else {
-        // Guru sees only nilai and cetak
-        item.style.display = guruOnlyPages.includes(page) ? '' : 'none';
+        item.style.display = guruAllowedPages.includes(page) ? '' : 'none';
       }
     });
 
-    // Akun Guru nav item only for admin
+    // Akun Guru nav item hanya untuk admin
     const navAkun = document.getElementById('nav-akun');
     if (navAkun) navAkun.style.display = isAdmin ? '' : 'none';
+
+    // Tombol Import Excel & Tambah Siswa disesuaikan untuk admin
+    const btnImport = document.querySelector('[onclick="openImportExcel()"]');
+    const btnTpl = document.querySelector('[onclick="downloadTemplateSiswa()"]');
+    if (btnImport) btnImport.style.display = isAdmin ? '' : 'none';
+    if (btnTpl) btnTpl.style.display = isAdmin ? '' : 'none';
   },
 
   /** Toggle password visibility */
