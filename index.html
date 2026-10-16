@@ -1172,39 +1172,38 @@
       <button class="modal-close" data-modal-close aria-label="Tutup">✕</button>
     </div>
     <div class="modal-body">
-      <form id="form-akun" novalidate>
+      <form id="form-akun" onsubmit="saveAkun(event)" novalidate>
         <div class="form-grid">
           <div class="form-group">
             <label>Username *</label>
-            <input type="text" name="akun-username" placeholder="Contoh: ustadah_rina" required />
+            <input type="text" name="akun-username" id="akun-username-input" placeholder="Contoh: ustadah_rina" required />
           </div>
           <div class="form-group">
-            <label>Nama Guru *</label>
-            <select name="akun-nama-guru" id="akun-nama-guru-select">
-              <option value="">-- Pilih Guru --</option>
-            </select>
+            <label>Nama Guru / Pengguna *</label>
+            <input type="text" name="akun-nama-guru" id="akun-nama-guru-input" list="akun-guru-datalist" placeholder="Ketik nama atau pilih guru" autocomplete="off" required />
+            <datalist id="akun-guru-datalist"></datalist>
           </div>
           <div class="form-group">
             <label>Role *</label>
-            <select name="akun-role">
+            <select name="akun-role" id="akun-role-select">
               <option value="guru">Guru</option>
               <option value="admin">Admin</option>
             </select>
           </div>
           <div class="form-group">
             <label>Status</label>
-            <select name="akun-status">
+            <select name="akun-status" id="akun-status-select">
               <option value="aktif">Aktif</option>
               <option value="nonaktif">Non-Aktif</option>
             </select>
           </div>
           <div class="form-group" id="akun-password-group">
             <label>Password *</label>
-            <input type="password" name="akun-password" placeholder="Minimal 6 karakter" />
+            <input type="password" name="akun-password" id="akun-password-input" placeholder="Minimal 6 karakter" />
           </div>
           <div class="form-group" id="akun-konfirmasi-group">
             <label>Konfirmasi Password *</label>
-            <input type="password" name="akun-konfirmasi" placeholder="Ulangi password" />
+            <input type="password" name="akun-konfirmasi" id="akun-konfirmasi-input" placeholder="Ulangi password" />
           </div>
           <div class="form-group full-width" id="akun-ganti-password-wrap" style="display:none">
             <label>
@@ -1215,7 +1214,7 @@
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-outline" data-modal-close>Batal</button>
-          <button type="submit" class="btn btn-primary">💾 Simpan</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-akun">💾 Simpan</button>
         </div>
       </form>
     </div>

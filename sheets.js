@@ -172,10 +172,17 @@ const SheetsAPI = (() => {
     async delete(id)   { return _post('deleteKelas', { id }); },
   };
 
+  // ─── Akun Guru ──────────────────────────────────────────────
+  const Akun = {
+    async getAll()     { return _get('getAkun', {}, false); },
+    async save(data)   { return _post('saveAkun', { data }); },
+    async delete(id)   { return _post('deleteAkun', { id }); },
+  };
+
   return {
     setUrl, getUrl, isConnected, getLastError,
     testConnection,
-    Siswa, Nilai, Mapel, Guru, Kepala, Kelas,
+    Siswa, Nilai, Mapel, Guru, Kepala, Kelas, Akun,
     clearCache: _clearCache,
   };
 })();
@@ -288,9 +295,29 @@ const LocalStore = (() => {
     },
   };
 
+  const Akun = {
+    async getAll() {
+      return { data: _load('accounts', []) };
+    },
+    async save(item) {
+      const list = _load('accounts', []);
+      const idx = list.findIndex(x => x.id === item.id);
+      if (idx >= 0) list[idx] = item;
+      else list.push(item);
+      _save('accounts', list);
+      return { data: item, ok: true };
+    },
+    async delete(id) {
+      let list = _load('accounts', []);
+      list = list.filter(x => x.id !== id);
+      _save('accounts', list);
+      return { ok: true };
+    },
+  };
+
   // Export / import for debugging
   function exportAll() {
-    const keys = ['siswa', 'guru', 'kelas', 'mapel', 'nilai', 'kepala'];
+    const keys = ['siswa', 'guru', 'kelas', 'mapel', 'nilai', 'kepala', 'accounts'];
     const obj = {};
     keys.forEach(k => { obj[k] = _load(k, null); });
     return JSON.stringify(obj, null, 2);
@@ -301,7 +328,7 @@ const LocalStore = (() => {
     Object.entries(obj).forEach(([k, v]) => _save(k, v));
   }
 
-  return { Siswa, Guru, Kelas, Mapel, Nilai, Kepala, exportAll, importAll };
+  return { Siswa, Guru, Kelas, Mapel, Nilai, Kepala, Kelas, Akun, exportAll, importAll };
 })();
 
 /* =============================================================
@@ -322,5 +349,6 @@ const DataService = (() => {
     get Guru()    { return _store().Guru; },
     get Kepala()  { return _store().Kepala; },
     get Kelas()   { return _store().Kelas; },
+    get Akun()    { return _store().Akun; },
   };
 })();

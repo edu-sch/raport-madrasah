@@ -40,6 +40,7 @@ const SHEETS = {
   GURU:   'GuruData',
   KEPALA: 'KepalaData',
   KELAS:  'Kelas',
+  AKUN:   'AkunGuru',
 };
 
 // ── CORS Headers ───────────────────────────────────────────────
@@ -77,6 +78,7 @@ function getSheet(name) {
       [SHEETS.GURU]:   ['id','nama','nip','mapelAmpu','telepon','alamat'],
       [SHEETS.KEPALA]: ['id','nama','nip','jabatan','ttdUrl'],
       [SHEETS.KELAS]:  ['id','nama','jenjang'],
+      [SHEETS.AKUN]:   ['id','username','namaGuru','role','passwordHash','aktif','createdAt','updatedAt'],
     };
     const h = headers[name];
     if (h) {
@@ -242,6 +244,26 @@ function doGet(e) {
       case 'getKelas':
         return jsonResponse({ data: sheetToObjects(SHEETS.KELAS) });
 
+      // ─── Akun Guru ───────
+      case 'getAkun': {
+        let all = sheetToObjects(SHEETS.AKUN);
+        if (all.length === 0) {
+          const defaultAdmin = {
+            id: 'admin',
+            username: 'admin',
+            namaGuru: 'Administrator',
+            role: 'admin',
+            passwordHash: 'YWRtaW4xMjNfbWRiX3NhbHRfMjAyNA==',
+            aktif: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          upsertRecord(SHEETS.AKUN, defaultAdmin);
+          all = [defaultAdmin];
+        }
+        return jsonResponse({ data: all });
+      }
+
       default:
         return errorResponse('Action tidak dikenal: ' + action);
     }
@@ -385,6 +407,23 @@ function doPost(e) {
       case 'deleteKelas': {
         const { id } = body;
         deleteRecord(SHEETS.KELAS, id);
+        return jsonResponse({ ok: true });
+      }
+
+      // ─── Akun Guru ──────────────────
+      case 'saveAkun': {
+        const data = body.data;
+        if (!data?.id) return errorResponse('ID akun diperlukan');
+        if (!data.updatedAt) data.updatedAt = new Date().toISOString();
+        upsertRecord(SHEETS.AKUN, data);
+        return jsonResponse({ ok: true, data });
+      }
+
+      case 'deleteAkun': {
+        const { id } = body;
+        if (!id) return errorResponse('ID diperlukan');
+        if (id === 'admin') return errorResponse('Akun admin sistem tidak dapat dihapus');
+        deleteRecord(SHEETS.AKUN, id);
         return jsonResponse({ ok: true });
       }
 

@@ -1511,6 +1511,7 @@ async function testSheetsConnection() {
       resultEl.textContent = '✅ Berhasil terhubung ke Google Apps Script!';
       State.settings.sheetsUrl = url;
       saveSettings();
+      await Auth.syncFromSheets();
       Toast.success('Koneksi Google Sheets berhasil!');
     } else {
       resultEl.className = 'url-test-result error';
@@ -1647,6 +1648,9 @@ const Auth = {
   init() {
     this._initDefaultAdmin();
 
+    // Sinkronkan akun dari Google Sheets jika sudah terhubung
+    this.syncFromSheets().catch(() => {});
+
     // Check for saved session
     try {
       const session = sessionStorage.getItem(this._SESSION_KEY);
@@ -1665,6 +1669,21 @@ const Auth = {
 
     // Show login screen
     this._showLogin();
+  },
+
+  /** Sinkronisasi akun dari Google Sheets ke cache lokal */
+  async syncFromSheets() {
+    if (typeof SheetsAPI !== 'undefined' && SheetsAPI.isConnected()) {
+      try {
+        const res = await DataService.Akun.getAll();
+        if (res && Array.isArray(res.data) && res.data.length > 0) {
+          this._saveAccounts(res.data);
+          console.log('✅ Akun berhasil disinkronkan dari Google Sheets');
+        }
+      } catch (err) {
+        console.warn('Sync akun dari Sheets gagal:', err);
+      }
+    }
   },
 
   /** Handle login form submit */
@@ -1828,9 +1847,28 @@ const Auth = {
 let _editingAkunId = null;
 
 async function renderAkun() {
-  const accounts = Auth._getAccounts();
   const tbody = document.getElementById('akun-tbody');
   if (!tbody) return;
+
+  let accounts = [];
+
+  // Jika terhubung ke Google Sheets, ambil data terbaru dari spreadsheet
+  if (SheetsAPI.isConnected()) {
+    try {
+      const res = await DataService.Akun.getAll();
+      if (res && Array.isArray(res.data) && res.data.length > 0) {
+        accounts = res.data;
+        // Sinkronkan ke cache lokal
+        Auth._saveAccounts(accounts);
+      }
+    } catch (err) {
+      console.warn('Gagal memuat akun dari Sheets, menggunakan data lokal:', err);
+    }
+  }
+
+  if (!accounts || accounts.length === 0) {
+    accounts = Auth._getAccounts();
+  }
 
   if (!accounts.length) {
     tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--gray-500)">
@@ -1843,7 +1881,7 @@ async function renderAkun() {
     <tr>
       <td>${i + 1}</td>
       <td><strong>${escHtml(a.username)}</strong></td>
-      <td>${escHtml(a.namaGuru)}</td>
+      <td>${escHtml(a.namaGuru || '-')}</td>
       <td><span class="badge badge-${escHtml(a.role)}">${escHtml(a.role === 'admin' ? 'Admin' : 'Guru')}</span></td>
       <td><span class="badge badge-${a.aktif ? 'aktif' : 'nonaktif'}">${a.aktif ? 'Aktif' : 'Non-Aktif'}</span></td>
       <td>
@@ -1869,7 +1907,7 @@ async function openAddAkun() {
   document.getElementById('akun-ganti-password-wrap').style.display = 'none';
   f['akun-username'].readOnly = false;
 
-  // Populate guru dropdown
+  // Isi saran nama guru ke datalist
   await _populateAkunGuruDropdown('');
 
   Modal.open('modal-akun');
@@ -1882,42 +1920,39 @@ async function openEditAkun(id) {
   if (!a) return Toast.error('Akun tidak ditemukan');
 
   _editingAkunId = id;
-  document.getElementById('modal-akun-title').textContent = 'Edit Akun';
+  document.getElementById('modal-akun-title').textContent = 'Edit Akun Guru';
 
   const f = document.getElementById('form-akun');
   f.reset();
   f['akun-username'].value  = a.username;
-  f['akun-username'].readOnly = true; // Don't allow username change
+  f['akun-username'].readOnly = true; // Username tidak boleh diubah saat edit
+  f['akun-nama-guru'].value = a.namaGuru || '';
   f['akun-role'].value      = a.role;
   f['akun-status'].value    = a.aktif ? 'aktif' : 'nonaktif';
 
-  // Hide password fields by default for edit, show "ganti password" toggle
+  // Sembunyikan field password saat edit, tampilkan toggle ganti password
   document.getElementById('akun-password-group').style.display    = 'none';
   document.getElementById('akun-konfirmasi-group').style.display  = 'none';
   document.getElementById('akun-ganti-password-wrap').style.display = '';
   document.getElementById('akun-ganti-password').checked = false;
 
-  // Populate guru dropdown
   await _populateAkunGuruDropdown(a.namaGuru);
-  f['akun-nama-guru'].value = a.namaGuru;
 
   Modal.open('modal-akun');
 }
 
 async function _populateAkunGuruDropdown(selectedNama) {
-  const sel = document.getElementById('akun-nama-guru-select');
-  if (!sel) return;
+  const datalist = document.getElementById('akun-guru-datalist');
+  const input = document.getElementById('akun-nama-guru-input');
+  if (input && selectedNama) input.value = selectedNama;
+  if (!datalist) return;
+
   try {
     const res = await DataService.Guru.getAll();
     const guruList = res.data || [];
-    sel.innerHTML = '<option value="">-- Pilih Guru --</option>' +
-      guruList.map(g => `<option value="${escHtml(g.nama)}" ${g.nama === selectedNama ? 'selected' : ''}>${escHtml(g.nama)}</option>`).join('');
-    // Allow manual input if not in list
-    if (selectedNama && !guruList.find(g => g.nama === selectedNama)) {
-      sel.innerHTML += `<option value="${escHtml(selectedNama)}" selected>${escHtml(selectedNama)}</option>`;
-    }
+    datalist.innerHTML = guruList.map(g => `<option value="${escHtml(g.nama)}"></option>`).join('');
   } catch {
-    sel.innerHTML = '<option value="">Gagal memuat data guru</option>';
+    datalist.innerHTML = '';
   }
 }
 
@@ -1927,19 +1962,20 @@ function toggleGantiPassword(checked) {
 }
 
 async function saveAkun(e) {
-  e.preventDefault();
+  if (e && e.preventDefault) e.preventDefault();
   if (!Auth.isAdmin()) return Toast.warning('Hanya admin yang dapat mengelola akun');
 
   const f        = document.getElementById('form-akun');
   const username = f['akun-username'].value.trim();
-  const namaGuru = f['akun-nama-guru'].value.trim() || f['akun-nama-guru'].options[f['akun-nama-guru'].selectedIndex]?.text || username;
+  const namaGuru = f['akun-nama-guru'].value.trim() || username;
   const role     = f['akun-role'].value;
   const status   = f['akun-status'].value;
   const pass     = f['akun-password'].value;
   const konfirm  = f['akun-konfirmasi'].value;
+  const btn      = document.getElementById('btn-save-akun');
 
   if (!username) return Toast.warning('Username wajib diisi');
-  if (!namaGuru || namaGuru === '-- Pilih Guru --') return Toast.warning('Pilih nama guru');
+  if (!namaGuru) return Toast.warning('Nama guru/pengguna wajib diisi');
 
   const accounts = Auth._getAccounts();
   const isGantiPassword = !_editingAkunId || document.getElementById('akun-ganti-password')?.checked;
@@ -1950,12 +1986,14 @@ async function saveAkun(e) {
     if (pass !== konfirm) return Toast.warning('Konfirmasi password tidak sesuai');
   }
 
+  let targetAccount = null;
+
   if (!_editingAkunId) {
-    // New account - check unique username
-    if (accounts.find(a => a.username === username)) {
+    // Akun baru - cek keunikan username
+    if (accounts.find(a => a.username.toLowerCase() === username.toLowerCase())) {
       return Toast.warning(`Username "${username}" sudah digunakan`);
     }
-    const newAkun = {
+    targetAccount = {
       id:           genId(),
       username,
       namaGuru:     namaGuru,
@@ -1963,24 +2001,44 @@ async function saveAkun(e) {
       passwordHash: Auth._hash(pass),
       aktif:        status === 'aktif',
       createdAt:    new Date().toISOString(),
+      updatedAt:    new Date().toISOString(),
     };
-    accounts.push(newAkun);
+    accounts.push(targetAccount);
   } else {
     const idx = accounts.findIndex(a => a.id === _editingAkunId);
     if (idx === -1) return Toast.error('Akun tidak ditemukan');
-    accounts[idx].namaGuru = namaGuru;
-    accounts[idx].role     = role;
-    accounts[idx].aktif    = status === 'aktif';
+    accounts[idx].namaGuru  = namaGuru;
+    accounts[idx].role      = role;
+    accounts[idx].aktif     = (status === 'aktif');
     accounts[idx].updatedAt = new Date().toISOString();
     if (isGantiPassword && pass) {
       accounts[idx].passwordHash = Auth._hash(pass);
     }
+    targetAccount = accounts[idx];
   }
 
-  Auth._saveAccounts(accounts);
-  Toast.success(`Akun "${username}" berhasil ${_editingAkunId ? 'diperbarui' : 'ditambahkan'}`);
-  Modal.close('modal-akun');
-  await renderAkun();
+  if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan...'; }
+
+  try {
+    // Simpan ke penyimpanan lokal
+    Auth._saveAccounts(accounts);
+
+    // Jika terhubung ke Google Sheets, sinkronkan ke Spreadsheet
+    if (SheetsAPI.isConnected()) {
+      try {
+        await DataService.Akun.save(targetAccount);
+      } catch (sheetErr) {
+        console.warn('Gagal sinkron akun ke Google Sheets:', sheetErr);
+        Toast.warning('Akun tersimpan lokal, namun gagal sinkron ke Sheets: ' + sheetErr.message);
+      }
+    }
+
+    Toast.success(`Akun "${username}" berhasil ${_editingAkunId ? 'diperbarui' : 'ditambahkan'}`);
+    Modal.close('modal-akun');
+    await renderAkun();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Simpan'; }
+  }
 }
 
 async function deleteAkun(id, username) {
@@ -1990,6 +2048,15 @@ async function deleteAkun(id, username) {
 
   const accounts = Auth._getAccounts().filter(a => a.id !== id);
   Auth._saveAccounts(accounts);
+
+  if (SheetsAPI.isConnected()) {
+    try {
+      await DataService.Akun.delete(id);
+    } catch (err) {
+      console.warn('Gagal hapus akun di Google Sheets:', err);
+    }
+  }
+
   Toast.success(`Akun "${username}" berhasil dihapus`);
   await renderAkun();
 }
@@ -2302,6 +2369,7 @@ function initApp() {
   document.getElementById('form-siswa')?.addEventListener('submit', saveSiswa);
   document.getElementById('form-guru')?.addEventListener('submit',  saveGuru);
   document.getElementById('form-kepala')?.addEventListener('submit', saveKepala);
+  document.getElementById('form-akun')?.addEventListener('submit',   saveAkun);
 
   // Jenjang change in siswa form
   document.getElementById('siswa-jenjang')?.addEventListener('change', function() {
