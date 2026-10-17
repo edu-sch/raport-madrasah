@@ -1255,6 +1255,22 @@ select { cursor: pointer; appearance: none;
 .btn-login:active { transform: scale(0.98); }
 .btn-login:disabled { opacity: 0.6; cursor: not-allowed; }
 
+.login-sync-status {
+  margin-top: 12px;
+  font-size: 0.78rem;
+  text-align: center;
+  color: var(--gray-600);
+  background: var(--gray-100);
+  padding: 7px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--gray-200);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1.3;
+}
+
 .login-hint {
   display: flex;
   align-items: center;

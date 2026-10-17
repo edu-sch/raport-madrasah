@@ -8,8 +8,8 @@
   <meta name="theme-color" content="#1a5276" />
 
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="print.css" />
+  <link rel="stylesheet" href="style.css?v=2.2" />
+  <link rel="stylesheet" href="print.css?v=2.2" />
 
   <!-- Favicon via emoji -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
@@ -43,13 +43,13 @@
 
       <form id="form-login" onsubmit="Auth.login(event)">
         <div class="login-field">
-          <label for="login-username">Username</label>
-          <input type="text" id="login-username" placeholder="Masukkan username" autocomplete="username" required />
+          <label for="login-username">Username atau Nama Guru</label>
+          <input type="text" id="login-username" placeholder="Contoh: pakguru atau Nama Guru" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required />
         </div>
         <div class="login-field">
           <label for="login-password">Password</label>
           <div style="position:relative">
-            <input type="password" id="login-password" placeholder="Masukkan password" autocomplete="current-password" required />
+            <input type="password" id="login-password" placeholder="Masukkan password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required />
             <button type="button" class="btn-show-pass" onclick="Auth.togglePassword()" id="btn-show-pass" title="Tampilkan password">👁️</button>
           </div>
         </div>
@@ -57,6 +57,7 @@
         <button type="submit" class="btn-login" id="btn-login">
           <span id="btn-login-text">Masuk</span>
         </button>
+        <div id="login-sync-status" class="login-sync-status" style="display:none"></div>
       </form>
 
       <div class="login-hint">
@@ -1233,8 +1234,8 @@
 
 
 <!-- ─── Scripts ───────────────────────────────────────── -->
-<script src="sheets.js"></script>
-<script src="app.js"></script>
+<script src="sheets.js?v=2.2"></script>
+<script src="app.js?v=2.2"></script>
 
 </body>
 </html>

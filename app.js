@@ -2049,9 +2049,64 @@ const Auth = {
     }
   },
 
+  /** Find account by username, user, id, or namaGuru (relaxed matching) */
+  findAccount(inputStr) {
+    if (!inputStr) return null;
+    const q = String(inputStr).trim().toLowerCase();
+    const accounts = this._getAccounts();
+
+    // 1. Exact match on username, user, id
+    let found = accounts.find(a => {
+      const u = String(a.username || a.user || a.id || '').trim().toLowerCase();
+      return u === q;
+    });
+    if (found) return found;
+
+    // 2. Exact match on namaGuru or nama
+    found = accounts.find(a => {
+      const n = String(a.namaGuru || a.nama || '').trim().toLowerCase();
+      return n === q;
+    });
+    if (found) return found;
+
+    // 3. Normalized alphanumeric match (handles punctuation, e.g. "h mustofa ali" vs "H. MUSTOFA ALI")
+    const cleanQ = q.replace(/[^a-z0-9]/g, '');
+    if (cleanQ.length >= 3) {
+      found = accounts.find(a => {
+        const u = String(a.username || a.user || a.id || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        const n = String(a.namaGuru || a.nama || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        return u === cleanQ || n === cleanQ || (n.includes(cleanQ) && cleanQ.length >= 4);
+      });
+      if (found) return found;
+    }
+
+    return null;
+  },
+
   /** Initialize auth on app start */
   async init() {
     this._initDefaultAdmin();
+
+    // Check for saved session FIRST
+    let hasSession = false;
+    try {
+      const session = sessionStorage.getItem(this._SESSION_KEY);
+      if (session) {
+        const user = JSON.parse(session);
+        const accounts = this._getAccounts();
+        const found = accounts.find(a => a.id === user.id && a.aktif);
+        if (found) {
+          this._currentUser = found;
+          hasSession = true;
+        }
+      }
+    } catch { /* ignore */ }
+
+    if (hasSession) {
+      this._showApp();
+    } else {
+      this._showLogin();
+    }
 
     // Pastikan URL default Google Sheets otomatis terhubung
     const defaultUrl = 'https://script.google.com/macros/s/AKfycby_qJ7gIzI4xffuPjwKbzinRgq4YNQaFGrAgCbEavHW2-z6A1jpie4Dm2jxU_dznd-5/exec';
@@ -2060,83 +2115,82 @@ const Auth = {
       saveSettings();
     }
 
-    if (typeof SheetsAPI !== 'undefined') {
-      if (!SheetsAPI.getUrl()) {
-        await SheetsAPI.setUrl(defaultUrl);
-      }
-    }
-
-    // Selalu sinkronkan akun dari Google Sheets secara langsung
-    await this.syncFromSheets();
-
-    // Check for saved session
-    try {
-      const session = sessionStorage.getItem(this._SESSION_KEY);
-      if (session) {
-        const user = JSON.parse(session);
-        // Verify account still exists and is active
-        const accounts = this._getAccounts();
-        const found = accounts.find(a => a.id === user.id && a.aktif);
-        if (found) {
-          this._currentUser = found;
-          this._showApp();
-          return;
-        }
-      }
-    } catch { /* ignore */ }
-
-    // Show login screen
-    this._showLogin();
+    // Sinkronkan akun dari Google Sheets ke cache lokal di background
+    this.syncFromSheets().catch(err => console.warn('Background sync akun:', err));
   },
 
   /** Sinkronisasi akun dari Google Sheets ke cache lokal */
   async syncFromSheets() {
-    const url = (typeof SheetsAPI !== 'undefined' && SheetsAPI.getUrl()) || State.settings.sheetsUrl;
-    if (url && typeof SheetsAPI !== 'undefined') {
-      try {
-        if (!SheetsAPI.isConnected()) {
-          await SheetsAPI.setUrl(url);
-        }
-        const res = await SheetsAPI.Akun.getAll();
-        if (res && Array.isArray(res.data) && res.data.length > 0) {
-          const list = res.data.map(u => {
-            const username = String(u.user || u.username || u.User || u.id || '').trim();
-            const namaGuru = String(u['Nama Guru'] || u.namaGuru || u.nama || u.Nama || username).trim();
-            const tugas    = String(u.Tugas || u.tugas || u.waliKelas || '').trim();
-            const rawStatus = String(u.Status || u.status || 'Aktif').trim();
-            const aktif = (u.aktif === true || rawStatus.toLowerCase() === 'aktif' || rawStatus === '1');
-            const role = (username.toLowerCase() === 'admin') ? 'admin' : (u.role || 'guru');
-            const waliKelas = parseTugasToWaliKelas(tugas || u.waliKelas);
-            const pass = String(u.password || u.Password || '').trim();
-            const passHash = u.passwordHash || (pass ? Auth._hash(pass) : '');
+    const url = (typeof SheetsAPI !== 'undefined' && SheetsAPI.getUrl()) || State.settings.sheetsUrl || 'https://script.google.com/macros/s/AKfycby_qJ7gIzI4xffuPjwKbzinRgq4YNQaFGrAgCbEavHW2-z6A1jpie4Dm2jxU_dznd-5/exec';
+    const statusTextEl = document.getElementById('login-sync-status');
+    if (statusTextEl && !this._currentUser) {
+      statusTextEl.innerHTML = '<span class="spinner-sm"></span> Menghubungkan ke Spreadsheet...';
+      statusTextEl.style.display = 'flex';
+    }
 
-            return {
-              id:           u.id || username,
-              username:     username,
-              password:     pass,
-              passwordHash: passHash,
-              namaGuru:     namaGuru,
-              tugas:        tugas,
-              waliKelas:    waliKelas,
-              role:         role,
-              status:       rawStatus,
-              aktif:        aktif
-            };
-          });
-          this._saveAccounts(list);
-          console.log(`✅ ${list.length} akun berhasil disinkronkan dari Google Sheets`);
+    try {
+      const fetchUrl = new URL(url);
+      fetchUrl.searchParams.set('action', 'getAkun');
+      fetchUrl.searchParams.set('_t', String(Date.now())); // Cegah caching browser HP
+
+      const resp = await fetch(fetchUrl.toString(), {
+        method: 'GET',
+        mode: 'cors',
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const res = await resp.json();
+
+      if (res && Array.isArray(res.data) && res.data.length > 0) {
+        const list = res.data.map(u => {
+          const username = String(u.user || u.username || u.User || u.id || '').trim();
+          const namaGuru = String(u['Nama Guru'] || u.namaGuru || u.nama || u.Nama || username).trim();
+          const tugas    = String(u.Tugas || u.tugas || u.waliKelas || '').trim();
+          const rawStatus = String(u.Status || u.status || 'Aktif').trim();
+          const aktif = (u.aktif === true || rawStatus.toLowerCase() === 'aktif' || rawStatus === '1');
+          const role = (username.toLowerCase() === 'admin') ? 'admin' : (u.role || 'guru');
+          const waliKelas = parseTugasToWaliKelas(tugas || u.waliKelas);
+          const pass = String(u.password !== undefined && u.password !== null ? u.password : (u.Password || '')).trim();
+          const passHash = u.passwordHash || (pass ? Auth._hash(pass) : '');
+
+          return {
+            id:           u.id || username,
+            username:     username,
+            password:     pass,
+            passwordHash: passHash,
+            namaGuru:     namaGuru,
+            tugas:        tugas,
+            waliKelas:    waliKelas,
+            role:         role,
+            status:       rawStatus,
+            aktif:        aktif
+          };
+        }).filter(u => u.username.length > 0);
+
+        this._saveAccounts(list);
+        console.log(`✅ ${list.length} akun berhasil disinkronkan dari Google Sheets`);
+
+        if (statusTextEl && !this._currentUser) {
+          const guruCount = list.filter(a => a.role === 'guru').length;
+          statusTextEl.innerHTML = `✅ Terhubung ke Spreadsheet (${guruCount} akun guru)`;
         }
-      } catch (err) {
-        console.warn('Sync akun dari Sheets gagal:', err);
+        return list;
+      }
+    } catch (err) {
+      console.warn('Sync akun dari Sheets gagal:', err);
+      if (statusTextEl && !this._currentUser) {
+        statusTextEl.innerHTML = '⚠️ Offline (Gunakan data akun tersimpan)';
       }
     }
+    return this._getAccounts();
   },
 
   /** Handle login form submit */
   async login(e) {
     e.preventDefault();
-    const username = document.getElementById('login-username').value.trim();
-    const password = document.getElementById('login-password').value;
+    const rawUsername = document.getElementById('login-username').value;
+    const rawPassword = document.getElementById('login-password').value;
+    const username = (rawUsername || '').trim();
+    const password = (rawPassword || '').trim();
     const errEl    = document.getElementById('login-error');
     const btnText  = document.getElementById('btn-login-text');
     const btn      = document.getElementById('btn-login');
@@ -2146,39 +2200,50 @@ const Auth = {
     btnText.innerHTML = '<span class="spinner"></span> Memproses...';
 
     try {
-      let accounts = this._getAccounts();
-      let account  = accounts.find(a => a.username.toLowerCase() === username.toLowerCase());
+      let account = this.findAccount(username);
 
-      // Jika akun tidak ditemukan secara lokal, coba sinkronkan dari Google Sheets jika URL ada
-      if (!account && typeof SheetsAPI !== 'undefined' && SheetsAPI.getUrl()) {
+      // Jika akun tidak ditemukan secara lokal, atau baru ada default admin saja,
+      // paksa sinkronisasi langsung dari Google Sheets
+      if (!account || this._getAccounts().length <= 1) {
+        btnText.innerHTML = '<span class="spinner"></span> Menghubungkan ke Sheets...';
         try {
           await this.syncFromSheets();
-          accounts = this._getAccounts();
-          account  = accounts.find(a => a.username.toLowerCase() === username.toLowerCase());
+          account = this.findAccount(username);
         } catch (syncErr) {
           console.warn('Gagal sync akun saat login:', syncErr);
         }
       }
 
       if (!account) {
-        this._showLoginError('Username tidak ditemukan. Periksa kembali username Anda.', errEl);
+        const total = this._getAccounts().length;
+        const hint = total > 1 
+          ? `Akun "${username}" tidak ditemukan. Pastikan akun terdaftar di tab 'User' pada Google Spreadsheet.` 
+          : `Gagal memuat akun dari Google Sheets. Periksa koneksi internet Anda atau pastikan tab 'User' sudah ada di Spreadsheet.`;
+        this._showLoginError(hint, errEl);
         btn.disabled = false;
         btnText.textContent = 'Masuk';
         return;
       }
 
       if (!account.aktif) {
-        this._showLoginError('Akun tidak aktif. Hubungi administrator.', errEl);
+        this._showLoginError('Akun tidak aktif (Status bukan "Aktif"). Hubungi administrator.', errEl);
         btn.disabled = false;
         btnText.textContent = 'Masuk';
         return;
       }
 
-      const isPlainMatch = account.password && (String(account.password).trim() === String(password).trim());
-      const isHashMatch  = account.passwordHash && (account.passwordHash === this._hash(password));
+      // Verifikasi password (teks biasa dari sheet User atau hash)
+      const isPlainMatch = (account.password !== undefined && account.password !== null && account.password !== '') && (
+        String(account.password).trim() === password ||
+        String(account.password).trim() === rawPassword
+      );
+      const isHashMatch = account.passwordHash && (
+        account.passwordHash === this._hash(password) ||
+        account.passwordHash === this._hash(rawPassword)
+      );
 
       if (!isPlainMatch && !isHashMatch) {
-        this._showLoginError('Password salah. Coba lagi.', errEl);
+        this._showLoginError('Password salah. Periksa kembali password Anda.', errEl);
         btn.disabled = false;
         btnText.textContent = 'Masuk';
         return;
@@ -2189,6 +2254,11 @@ const Auth = {
       sessionStorage.setItem(this._SESSION_KEY, JSON.stringify(account));
       this._showApp();
       Toast.success(`Selamat datang, ${account.namaGuru}! 👋`);
+
+      // Inisialisasi halaman dashboard & sinkronisasi data penuh setelah login berhasil
+      SheetsAPI.setUrl(State.settings.sheetsUrl || 'https://script.google.com/macros/s/AKfycby_qJ7gIzI4xffuPjwKbzinRgq4YNQaFGrAgCbEavHW2-z6A1jpie4Dm2jxU_dznd-5/exec').then(updateConnectionStatus).catch(() => {});
+      navigate('dashboard');
+      syncAllData(false).catch(err => console.warn('Auto sync after login:', err));
 
     } catch (err) {
       this._showLoginError('Terjadi kesalahan: ' + err.message, errEl);
@@ -3092,29 +3162,12 @@ function initApp() {
     s.sheetsUrl = defaultUrl;
     saveSettings();
   }
-  SheetsAPI.setUrl(s.sheetsUrl).then(updateConnectionStatus).catch(() => {});
-
-  // Set default tahun ajaran
-  if (!s.tahunAjaran) {
-    s.tahunAjaran = currentTahunAjaran();
-    saveSettings();
+  // Jika pengguna sudah login (sesi aktif), hubungkan sheets, buka dashboard & sinkronkan data
+  if (Auth.getUser()) {
+    SheetsAPI.setUrl(s.sheetsUrl).then(updateConnectionStatus).catch(() => {});
+    navigate('dashboard');
+    syncAllData(false).catch(err => console.warn('Auto sync on start:', err));
   }
-
-  State.filterNilai.semester    = s.semester    || 'Ganjil';
-  State.filterNilai.tahunAjaran = s.tahunAjaran || currentTahunAjaran();
-
-  // Cetak defaults
-  const cetakTa = document.getElementById('cetak-ta-sel');
-  if (cetakTa) cetakTa.value = s.tahunAjaran || currentTahunAjaran();
-
-  const cetakSem = document.getElementById('cetak-semester-sel');
-  if (cetakSem) cetakSem.value = s.semester || 'Ganjil';
-
-  // Navigate to dashboard by default
-  navigate('dashboard');
-
-  // Sinkronisasi data Google Sheets otomatis setiap link dibuka
-  syncAllData(false).catch(err => console.warn('Auto sync on start:', err));
 
   console.log('✅ Raport Madrasah Darul Barokah - App initialized');
 }
