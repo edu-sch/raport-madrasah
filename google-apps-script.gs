@@ -40,7 +40,7 @@ const SHEETS = {
   GURU:       'User',
   KEPALA:     'KepalaData',
   KELAS:      'Kelas',
-  AKUN:       'AkunGuru',
+  AKUN:       'User',
   USER:       'User',
   PENGATURAN: 'Pengaturan',
 };
@@ -101,7 +101,6 @@ function getSheet(name) {
     [SHEETS.MAPEL]:      ['id','jenjang','nama','urutan','kkm','guru'],
     [SHEETS.KEPALA]:     ['id','jenjang','nama','nip','jabatan','ttdUrl','updatedAt'],
     [SHEETS.KELAS]:      ['id','nama','jenjang'],
-    [SHEETS.AKUN]:       ['id','username','namaGuru','role','waliKelas','passwordHash','aktif','createdAt','updatedAt'],
     [SHEETS.USER]:       ['user','password','Nama Guru','Tugas','Status'],
     [SHEETS.PENGATURAN]: ['id','tahunAjaran','semester','tempatCetak','tanggalCetak','namaMadrasah','alamatMadrasah','updatedAt'],
   };
