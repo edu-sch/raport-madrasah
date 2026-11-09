@@ -1,0 +1,18 @@
+feature,area,priority,original,clone,notes
+Login Multi-User (Admin & Wali Kelas),auth,must,yes,yes,Selesai dibangun di clone/data.js dengan role Admin dan Wali Kelas
+Role-Scoped Class View,auth,must,yes,yes,Selesai - Tampilan dibatasi otomatis sesuai penugasan kelas wali
+Sinkronisasi Google Spreadsheet Real-Time,sync,must,yes,partial,Lapisan data lokal mandiri siap dihubungkan ke backend pada tahap replica-backend
+Pemilihan Rombel Santri (A / B) Sekaligus,siswa,must,yes,yes,Selesai - Radio button interaktif dengan Simpan Sekaligus
+Input Nilai Berbasis Mata Pelajaran,nilai,must,yes,yes,Selesai - Tab navigasi mapel dengan input angka serentak per kelas
+Kalkulasi Otomatis Predikat & Status Tuntas,nilai,must,yes,yes,Selesai - Perhitungan real-time rumus interval KKM dinamis A/B/C/D
+Pratinjau Raport Format A4 Standar Resmi,cetak,must,yes,yes,Selesai - Kop madrasah biodata tabel nilai dan blok tanda tangan
+Print / Ekspor PDF Langsung dari Browser,cetak,must,yes,yes,Selesai - CSS @media print tanpa elemen UI & tanpa watermark
+Dukungan Multi Jenjang (MI MTs MA),kurikulum,must,yes,yes,Selesai - Pemetaan jenjang MI (1-6) MTs (7-9) MA (10-12)
+Responsive Mobile & Tablet View,ui,must,yes,yes,Selesai - Drawer menu mobile dan tabel responsif
+Offline LocalStorage Fallback,storage,should,yes,yes,Selesai - Penyimpanan persisten lokal tanpa kehilangan data
+Manajemen KKM & Bobot Mata Pelajaran,kurikulum,should,yes,yes,Selesai - KKM per mata pelajaran terkonfigurasi
+Input Tanda Tangan Digital Kepala & Wali,cetak,should,yes,yes,Selesai - Blok tanda tangan wali kelas dan kepala madrasah
+Watermark Badge Operator Santri,branding,should,yes,yes,Selesai - Floating pill by Operator Santri pojok kanan bawah
+Statistik Grafik Distribusi Nilai,analytics,could,yes,partial,Kartu metrik dan jumlah santri selesai grafik visual lanjutan
+Cetak Massal Seluruh Raport Satu Kelas,cetak,could,yes,partial,Pencetakan per santri selesai cetak batch multi-page berkelanjutan
+Database Kredensial Pribadi Madrasah,security,could,skip,skip,Kredensial Google Cloud pribadi lembaga tidak boleh dikloning

@@ -1,0 +1,23 @@
+feature,area,priority,original,clone,notes
+Login multi-role dengan seleksi Tahun Ajaran & Semester,authentication,must,yes,no,Proktor admin vs Guru/Wali Kelas
+Proteksi form login dengan CSRF token dan toggle visibilitas kata sandi,authentication,must,yes,no,Mencegah serangan CSRF dan mempermudah input
+Reset password proktor menggunakan NSM dan token darurat,authentication,must,yes,no,Pemulihan akses administrator
+Dashboard metrik ringkasan madrasah dan progres entri nilai guru,dashboard,must,yes,no,Monitoring status pengisian nilai per kelas
+Konfigurasi profil madrasah kop surat dan identitas Kepala Madrasah,settings,must,yes,no,Pengaturan identitas resmi penandatangan
+Manajemen data siswa dan penempatan rombongan belajar tingkat 1-6 MI,students,must,yes,no,Biodata santri lengkap dengan NIS/NISN
+Manajemen data guru dan pemetaan jadwal penugasan mengajar,teachers,must,yes,no,Distribusi mapel dan penunjukan wali kelas
+Struktur kurikulum mata pelajaran (Kelompok PAI Umum Mulok) dan KKM/KKTP,curriculum,must,yes,no,Mendukung Kurikulum Merdeka dan Kurikulum 2013
+Formulir input nilai formatif dan sumatif lingkup materi per mapel,grading,must,yes,no,Grid kalkulasi otomatis rata-rata dan predikat A/B/C/D
+Modul wali kelas untuk pencatatan presensi ekstrakurikuler dan catatan raport,homeroom,must,yes,no,Rekap sakit izin alpa dan catatan perkembangan
+Rekapitulasi leger nilai lengkap satu kelas satu semester,grading,must,yes,no,Tabel komprehensif seluruh nilai mapel dan peringkat
+Cetak fisik dan pratinjau dokumen rapor resmi standar Kemenag format A4,printing,must,yes,no,Cover identitas capaian catatan dan blok tanda tangan
+Penguncian status nilai (locking) untuk mencegah perubahan setelah cetak,grading,should,yes,no,Integritas data nilai setelah verifikasi wali & kamad
+Impor dan ekspor data nilai siswa via template spreadsheet Excel,data exchange,should,yes,no,Kemudahan pengisian nilai secara luring (offline)
+Modul asesmen Kokurikuler Projek Penguatan Profil Pelajar Pancasila & Rahmatan lil Alamin (P5RA),curriculum,should,yes,no,Khusus implementasi Kurikulum Merdeka
+PWA offline support dan caching aset dengan Service Worker,performance,should,yes,no,Mempercepat loading antarmuka pengguna
+Cetak rapor massal (bulk print / batch download PDF) per rombel,printing,should,yes,no,Efisiensi pencetakan dokumen satu rombel sekaligus
+QR Code verifikasi keabsahan lembar rapor santri,security,could,yes,no,Validasi digital saat verifikasi dokumen fisik
+Log audit riwayat perubahan nilai oleh guru dan admin,security,could,yes,no,Pelacakan jika terjadi pengubahan angka nilai
+Backup dan restore basis data lokal madrasah,system,could,yes,no,Pencadangan database berkala oleh proktor
+Sinkronisasi online dua arah dengan server pusat Kemenag RI,integrations,could,yes,skip,Server privat internal Kemenag KSKK madrasah tidak dibuka untuk publik
+Enkripsi closed-source ionCube loader biner aplikasi Kemenag,runtime,could,yes,skip,Digantikan dengan arsitektur modern open-source transparan

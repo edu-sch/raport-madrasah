@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Raport Madrasah Diniah | OperatorSantri Suite (Clean-Room Clone)</title>
+  <meta name="description" content="Aplikasi Raport Digital Madrasah Diniah Darul Barokah - Versi Standalone Mandiri" />
+
+  <!-- Favicon: Operator Santri (OS) -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23047857'/%3E%3Cstop offset='100%25' stop-color='%23064e3b'/%3E%3C/linearGradient%3E%3ClinearGradient id='gd' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23fbbf24'/%3E%3Cstop offset='100%25' stop-color='%23d97706'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23bg)'/%3E%3Crect x='2' y='2' width='60' height='60' rx='14' fill='none' stroke='url(%23gd)' stroke-width='2.2' stroke-opacity='0.9'/%3E%3Ccircle cx='50' cy='14' r='3.5' fill='url(%23gd)'/%3E%3Ctext x='31' y='44' font-family='system-ui, -apple-system, sans-serif' font-size='32' font-weight='900' letter-spacing='-1.5' text-anchor='middle'%3E%3Ctspan fill='url(%23gd)'%3EO%3C/tspan%3E%3Ctspan fill='%23ffffff'%3ES%3C/tspan%3E%3C/text%3E%3C/svg%3E" />
+
+  <!-- Design Tokens & Component Styles -->
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- Toast Notification Hub -->
+  <div id="toast-container" aria-live="polite"></div>
+
+  <!-- App Shell -->
+  <div id="app-root">
+
+    <!-- ─── SIDEBAR NAVIGATION ─── -->
+    <aside class="app-sidebar" id="app-sidebar" aria-label="Navigasi Utama">
+      <div class="sidebar-brand">
+        <div class="brand-icon">📚</div>
+        <div class="brand-text">
+          <h1>DARUL BAROKAH</h1>
+          <p>Madrasah Diniah Surabaya</p>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">Menu Utama</div>
+        <button class="nav-link active" data-page="dashboard" onclick="App.navigate('dashboard')">
+          <span>🏠</span>
+          <span>Dashboard</span>
+        </button>
+        <button class="nav-link" data-page="siswa" onclick="App.navigate('siswa')">
+          <span>👨‍🎓</span>
+          <span>Data Siswa & Rombel</span>
+        </button>
+
+        <div class="nav-section-title">Akademik & Nilai</div>
+        <button class="nav-link" data-page="nilai" onclick="App.navigate('nilai')">
+          <span>📝</span>
+          <span>Input Nilai Mapel</span>
+        </button>
+        <button class="nav-link" data-page="cetak" onclick="App.navigate('cetak')">
+          <span>🖨️</span>
+          <span>Cetak Raport Resmi</span>
+        </button>
+
+        <div class="nav-section-title">Konfigurasi</div>
+        <button class="nav-link" data-page="settings" onclick="App.navigate('settings')">
+          <span>⚙️</span>
+          <span>Pengaturan Lembaga</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-user">
+        <div class="user-info">
+          <div class="user-avatar" id="sidebar-user-avatar">M</div>
+          <div class="user-meta">
+            <div class="user-name" id="sidebar-user-name">H. MUSTOFA ALI</div>
+            <div class="user-role" id="sidebar-user-role">Wali Kelas 5 A</div>
+          </div>
+        </div>
+      </div>
+      <div class="sidebar-brand-badge" style="padding: 16px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: center;">
+        <a href="https://edu-sch.pages.dev/" target="_blank" rel="noopener noreferrer" class="badge-os-pill" title="Operator Santri Portal">
+          <span class="badge-os-by">by</span>
+          <span class="badge-os-brand">
+            <span class="badge-os-operator">Operator</span>
+            <span class="badge-os-santri">Santri</span>
+          </span>
+        </a>
+      </div>
+    </aside>
+
+    <!-- ─── MAIN CONTENT VIEWPORT ─── -->
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="topbar-left">
+          <button class="mobile-toggle" onclick="document.getElementById('app-sidebar').classList.toggle('open')" aria-label="Buka Menu">
+            ☰
+          </button>
+          <h2 class="page-title" id="current-page-title">Dashboard Madrasah</h2>
+        </div>
+        <div class="topbar-right">
+          <span class="badge-pill badge-info">Semester Ganjil</span>
+          <span class="badge-pill badge-gold">T.A. 2024/2025</span>
+          <button class="btn btn-sync" onclick="alert('Data lokal telah terverifikasi sinkron!')" title="Status Sinkronisasi">
+            <svg class="spinner-svg" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+            <span>Tersinkron Mandiri</span>
+          </button>
+        </div>
+      </header>
+
+      <section class="app-viewport" id="main-viewport">
+        <!-- Rendered dynamically by app.js -->
+      </section>
+    </main>
+
+  </div>
+
+  <!-- ─── Watermark: by Operator Santri ─── -->
+  <a href="https://edu-sch.pages.dev/" target="_blank" rel="noopener noreferrer" class="badge-watermark-os" title="Operator Santri Portal">
+    <div class="badge-os-pill">
+      <span class="badge-os-by">by</span>
+      <span class="badge-os-brand">
+        <span class="badge-os-operator">Operator</span>
+        <span class="badge-os-santri">Santri</span>
+      </span>
+    </div>
+  </a>
+
+  <!-- Application Logic -->
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
