@@ -154,10 +154,62 @@ function avg(arr) {
  * Parse teks Kelas & Rombel secara cerdas.
  * Mampu membaca format: '5 - A', '5-A', '5 A', 'Kelas 5 A', 'Wali Kelas 5 A', '5'
  */
+/**
+ * Parse teks tugas/jabatan guru menjadi kelas & rombel secara cerdas.
+ * Mendukung format: 'GURU KELAS 5-B', 'GURU KLS 5-B', 'WALI KELAS 5-B', 'wali kls 5-B',
+ * 'Kelas 5 B', '5-B', '5 - B', '5B', '5'
+ */
+function parseGuruKelasRombel(str) {
+  if (!str) return null;
+  let s = String(str).trim();
+  s = s.replace(/^(guru\s*kelas|guru\s*kls|wali\s*kelas|wali\s*kls|guru|wali|kelas|kls)\s*/i, '').trim();
+
+  // Pattern 1: Kelas (angka / romawi) diikuti rombel (huruf A-Z)
+  const matchWithRombel = s.match(/^(\d+|[IVXLCDM]+)\s*[-_/]?\s*([A-Za-z])$/i);
+  if (matchWithRombel) {
+    const k = matchWithRombel[1];
+    const r = matchWithRombel[2].toUpperCase();
+    const num = parseInt(k, 10);
+    let jenjang = 'MI';
+    if (num >= 7 && num <= 9) jenjang = 'MTs';
+    else if (num >= 10 && num <= 12) jenjang = 'MA';
+    return { kelas: k, rombel: r, jenjang, raw: str };
+  }
+
+  // Pattern 2: Angka kelas di awal dan huruf rombel di dalam string
+  const matchInside = s.match(/(\d+|[IVXLCDM]+)\s*[-_/]?\s*([A-Za-z])/i);
+  if (matchInside) {
+    const k = matchInside[1];
+    const r = matchInside[2].toUpperCase();
+    const num = parseInt(k, 10);
+    let jenjang = 'MI';
+    if (num >= 7 && num <= 9) jenjang = 'MTs';
+    else if (num >= 10 && num <= 12) jenjang = 'MA';
+    return { kelas: k, rombel: r, jenjang, raw: str };
+  }
+
+  // Pattern 3: Hanya kelas angka/romawi saja
+  const matchOnlyKelas = s.match(/^(\d+|[IVXLCDM]+)/i);
+  if (matchOnlyKelas) {
+    const k = matchOnlyKelas[1];
+    const num = parseInt(k, 10);
+    let jenjang = 'MI';
+    if (num >= 7 && num <= 9) jenjang = 'MTs';
+    else if (num >= 10 && num <= 12) jenjang = 'MA';
+    return { kelas: k, rombel: '', jenjang, raw: str };
+  }
+
+  return null;
+}
+
 function parseKelasRombel(rawKelas, rawRombel) {
   let k = String(rawKelas || '').trim();
   let r = String(rawRombel || '').trim();
-  k = k.replace(/^(wali\s*kelas|kelas|kls)\s*/i, '').trim();
+  const parsed = parseGuruKelasRombel(k);
+  if (parsed) {
+    return { kelas: parsed.kelas, rombel: r ? r.toUpperCase() : parsed.rombel };
+  }
+  k = k.replace(/^(guru\s*kelas|guru\s*kls|wali\s*kelas|wali\s*kls|guru|wali|kelas|kls)\s*/i, '').trim();
   const m = k.match(/^(\d+|[IVXLCDM]+)\s*[-_/]?\s*([A-Za-z])$/i);
   if (m) {
     return { kelas: m[1], rombel: (r || m[2]).toUpperCase() };
@@ -192,8 +244,8 @@ function normalizeSiswaList(rawList) {
 function parseTugasToWaliKelas(tugas) {
   if (!tugas) return '';
   const str = String(tugas).trim();
-  const match = str.match(/wali\s*kelas\s*(.*)/i);
-  return match && match[1] ? match[1].trim() : str;
+  const clean = str.replace(/^(guru\s*kelas|guru\s*kls|wali\s*kelas|wali\s*kls|guru|wali|kelas|kls)\s*/i, '').trim();
+  return clean || str;
 }
 
 /**
@@ -203,11 +255,43 @@ function parseTugasToWaliKelas(tugas) {
 function getGuruAssignedKelas() {
   const u = typeof Auth !== 'undefined' ? Auth.getUser() : null;
   if (!u || Auth.isAdmin()) return null;
-  const raw = parseTugasToWaliKelas(u.waliKelas || u.tugas || '');
+
+  // 1. Prioritaskan data guru live dari State.guru (yang ditarik dari sheet Guru di spreadsheet)
+  if (State.guru && State.guru.length > 0) {
+    const uName = String(u.namaGuru || u.nama || u.username || '').trim().toLowerCase();
+    const uClean = uName.replace(/[^a-z0-9]/g, '');
+
+    const matchedGuru = State.guru.find(g => {
+      if (!g) return false;
+      if (g.id && u.id && String(g.id).trim().toLowerCase() === String(u.id).trim().toLowerCase()) return true;
+      const gName = String(g.nama || '').trim().toLowerCase();
+      if (gName && gName === uName) return true;
+      const gClean = gName.replace(/[^a-z0-9]/g, '');
+      return gClean.length >= 3 && (gClean === uClean || gClean.includes(uClean) || uClean.includes(gClean));
+    });
+
+    if (matchedGuru) {
+      const gTugas = matchedGuru.mapelAmpu || matchedGuru.waliKelas || matchedGuru.tugas || matchedGuru.kelas || '';
+      const parsedG = parseGuruKelasRombel(gTugas);
+      if (parsedG && parsedG.kelas) {
+        return parsedG;
+      }
+    }
+  }
+
+  // 2. Cari dari data profil akun yang sedang login (Auth user: u.tugas, u.waliKelas, u.mapelAmpu)
+  const userTugas = u.waliKelas || u.tugas || u.mapelAmpu || u.kelas || '';
+  const parsedU = parseGuruKelasRombel(userTugas);
+  if (parsedU && parsedU.kelas) {
+    return parsedU;
+  }
+
+  // 3. Fallback ke parser standar
+  const raw = parseTugasToWaliKelas(userTugas);
   if (!raw) return null;
   const parsed = parseKelasRombel(raw, '');
-  const kelas = parsed.kelas; // contoh "5"
-  const rombel = parsed.rombel; // contoh "A"
+  const kelas = parsed.kelas;
+  const rombel = parsed.rombel;
   const num = parseInt(kelas, 10);
   let jenjang = 'MI';
   if (num >= 7 && num <= 9) jenjang = 'MTs';
@@ -1000,6 +1084,12 @@ async function onNilaiJenjangChange() {
 }
 
 async function renderNilaiControls() {
+  if (!State.guru || State.guru.length === 0) {
+    try {
+      const gRes = await DataService.Guru.getAll();
+      if (gRes && Array.isArray(gRes.data)) State.guru = gRes.data;
+    } catch (e) { console.warn('Gagal memuat guru:', e); }
+  }
   const jenjangSel = document.getElementById('nilai-jenjang-sel');
   if (jenjangSel) jenjangSel.value = State.filterNilai.jenjang;
 
@@ -1082,9 +1172,15 @@ function updateNilaiKelasOptions() {
 }
 
 async function loadNilaiSiswaList() {
-  const jenjang  = document.getElementById('nilai-jenjang-sel')?.value || 'MI';
-  const kelas    = document.getElementById('nilai-kelas-sel')?.value || '';
-  const rombel   = document.getElementById('nilai-rombel-sel')?.value || '';
+  const assigned = getGuruAssignedKelas();
+  let jenjang  = document.getElementById('nilai-jenjang-sel')?.value || 'MI';
+  let kelas    = document.getElementById('nilai-kelas-sel')?.value || '';
+  let rombel   = document.getElementById('nilai-rombel-sel')?.value || '';
+  if (assigned && assigned.kelas) {
+    kelas = assigned.kelas;
+    if (assigned.rombel) rombel = assigned.rombel;
+    if (assigned.jenjang) jenjang = assigned.jenjang;
+  }
   const mapelId  = document.getElementById('nilai-mapel-sel')?.value || '';
   const semester = document.getElementById('nilai-semester-sel')?.value || 'Ganjil';
   const ta       = document.getElementById('nilai-ta-sel')?.value || currentTahunAjaran();
@@ -1757,6 +1853,12 @@ function handleTtdUpload(input) {
  * ============================================================ */
 async function renderCetak() {
   try {
+    if (!State.guru || State.guru.length === 0) {
+      try {
+        const gRes = await DataService.Guru.getAll();
+        if (gRes && Array.isArray(gRes.data)) State.guru = gRes.data;
+      } catch (e) { console.warn('Gagal memuat guru:', e); }
+    }
     const res = await DataService.Siswa.getAll();
     State.siswa = normalizeSiswaList(res.data || []);
 
@@ -3298,25 +3400,49 @@ async function syncAllData(isManual = false) {
 
       Auth._saveAccounts(normalizedAccounts);
 
-      // Auto-update State.guru dari data User/Akun di spreadsheet (tidak perlu input guru terpisah)
-      const teachersFromUsers = normalizedAccounts.map(a => ({
-        id:        a.id || a.username,
-        nama:      a.namaGuru,
-        waliKelas: a.waliKelas,
-        tugas:     a.tugas,
-        nip:       '',
-        telepon:   '',
-        alamat:    ''
-      }));
-
-      if (teachersFromUsers.length > 0) {
-        State.guru = teachersFromUsers;
-        localStorage.setItem('mdb_guru', JSON.stringify(State.guru));
+      // Perbarui juga data session aktif jika user sedang login
+      if (Auth._currentUser) {
+        const updatedSelf = normalizedAccounts.find(a => a.id === Auth._currentUser.id || a.username === Auth._currentUser.username);
+        if (updatedSelf) {
+          Auth._currentUser = { ...Auth._currentUser, ...updatedSelf };
+          sessionStorage.setItem(Auth._SESSION_KEY, JSON.stringify(Auth._currentUser));
+        }
       }
-    } else if (guruRes.status === 'fulfilled' && Array.isArray(guruRes.value?.data)) {
-      State.guru = guruRes.value.data;
-      localStorage.setItem('mdb_guru', JSON.stringify(State.guru));
     }
+
+    // Ambil data guru dari sheet Guru (SHEETS.GURU)
+    let finalGuruList = [];
+    if (guruRes.status === 'fulfilled' && Array.isArray(guruRes.value?.data) && guruRes.value.data.length > 0) {
+      finalGuruList = guruRes.value.data.map(g => {
+        const tugas = g.mapelAmpu || g.waliKelas || g.tugas || '';
+        return {
+          ...g,
+          mapelAmpu: g.mapelAmpu || tugas,
+          waliKelas: g.waliKelas || tugas,
+          tugas: g.tugas || tugas
+        };
+      });
+    }
+
+    // Lengkapi dengan akun guru jika belum ada di finalGuruList
+    const cachedAccounts = Auth._getAccounts();
+    cachedAccounts.forEach(a => {
+      if (a.role === 'guru' && !finalGuruList.some(g => (g.nama && g.nama.toLowerCase() === a.namaGuru.toLowerCase()) || g.id === a.id)) {
+        finalGuruList.push({
+          id:        a.id || a.username,
+          nama:      a.namaGuru,
+          waliKelas: a.waliKelas,
+          tugas:     a.tugas,
+          mapelAmpu: a.tugas,
+          nip:       '',
+          telepon:   '',
+          alamat:    ''
+        });
+      }
+    });
+
+    State.guru = finalGuruList;
+    localStorage.setItem('mdb_guru', JSON.stringify(State.guru));
 
     if (mapelRes.status === 'fulfilled' && Array.isArray(mapelRes.value?.data)) {
       State.mapel = mapelRes.value.data;

@@ -15,6 +15,8 @@ global.localStorage = {
 // Load data.js
 const fs = require('fs');
 const path = require('path');
+const appJsCode = fs.readFileSync(path.resolve(__dirname, '../app.js'), 'utf8');
+const styleCssCode = fs.readFileSync(path.resolve(__dirname, '../style.css'), 'utf8');
 const dataCode = fs.readFileSync(path.join(__dirname, '../clone/data.js'), 'utf8');
 eval(dataCode + '\nglobal.DataStore = DataStore;');
 
@@ -91,6 +93,19 @@ assert(uGuru.role === 'guru' && guruAllowedPages.length === 2, 'F01-E4', 'Akun G
 // Penentuan Kelas & Rombel mutlak dari database
 assert(uGuru.waliKelas === '5 A', 'F01-E5', 'Penentuan kelas & rombel wali kelas bersumber mutlak dari database');
 
+// Test F01-E6: Deteksi akurat wali kelas dan rombel dari sheet Guru (mapelAmpu: 'GURU KELAS 5-B')
+const testParsed5B = (function() {
+  const s = 'GURU KELAS 5-B'.replace(/^(guru\s*kelas|guru\s*kls|wali\s*kelas|wali\s*kls|guru|wali|kelas|kls)\s*/i, '').trim();
+  const m = s.match(/^(\d+|[IVXLCDM]+)\s*[-_/]?\s*([A-Za-z])$/i);
+  return m ? { kelas: m[1], rombel: m[2].toUpperCase() } : null;
+})();
+const hasSmartParse = appJsCode.includes('parseGuruKelasRombel') && appJsCode.includes('matchedGuru.mapelAmpu');
+assert(
+  hasSmartParse && testParsed5B && testParsed5B.kelas === '5' && testParsed5B.rombel === 'B',
+  'F01-E6',
+  'Pengaturan guru di spreadsheet sebagai "GURU KELAS 5-B" akurat terbaca sebagai Kelas 5 Rombel B'
+);
+
 
 // --------------------------------------------------------------------------
 // FLOW 02: PENGATURAN ROMBEL SISWA (A / B)
@@ -152,8 +167,6 @@ assert(savedEmptyCount === 2 && s103Nilai && s103Nilai.nilai === 0, 'F03-H5', 'N
 );
 
 // Test navigasi bilah geser horizontal gaya Excel & toggle ciut sidebar
-const appJsCode = fs.readFileSync(path.resolve(__dirname, '../app.js'), 'utf8');
-const styleCssCode = fs.readFileSync(path.resolve(__dirname, '../style.css'), 'utf8');
 const hasExcelBar = appJsCode.includes('excel-h-scrollbar') && appJsCode.includes('initExcelScrollbar');
 const hasExcelCss = styleCssCode.includes('.excel-scrollbar-bar') && styleCssCode.includes('.excel-scroll-thumb');
 assert(

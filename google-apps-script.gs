@@ -70,13 +70,27 @@ function errorResponse(msg, code = 400) {
 function getSheet(name) {
   const ss = getSpreadsheet();
   let sheet = ss.getSheetByName(name);
-  if (!sheet) {
-    // Cek kecocokan nama tanpa sensitif huruf besar/kecil
-    const allSheets = ss.getSheets();
-    for (let i = 0; i < allSheets.length; i++) {
-      if (allSheets[i].getName().trim().toLowerCase() === name.toLowerCase()) {
-        sheet = allSheets[i];
-        break;
+  if (sheet) return sheet;
+
+  // Cek alias nama sheet umum di Google Sheets
+  const aliases = {
+    [SHEETS.GURU]: ['Guru', 'DataGuru', 'Data Guru', 'Teachers', 'GuruData'],
+    [SHEETS.USER]: ['User', 'Users', 'Akun', 'AkunGuru', 'Akun Guru'],
+    [SHEETS.SISWA]: ['Siswa', 'DataSiswa', 'Data Siswa', 'Students'],
+    [SHEETS.MAPEL]: ['Mapel', 'MataPelajaran', 'Mata Pelajaran', 'MapelConfig'],
+    [SHEETS.KEPALA]: ['Kepala', 'KepalaMadrasah', 'Kepala Madrasah', 'KepalaData'],
+    [SHEETS.NILAI]: ['Nilai', 'NilaiSiswa', 'DataNilai'],
+    [SHEETS.KELAS]: ['Kelas', 'DataKelas'],
+    [SHEETS.PENGATURAN]: ['Pengaturan', 'Settings', 'Config']
+  };
+
+  const nameList = [name].concat(aliases[name] || []);
+  const allSheets = ss.getSheets();
+  for (let i = 0; i < allSheets.length; i++) {
+    const sName = allSheets[i].getName().trim().toLowerCase();
+    for (let j = 0; j < nameList.length; j++) {
+      if (sName === nameList[j].toLowerCase()) {
+        return allSheets[i];
       }
     }
   }
@@ -294,8 +308,8 @@ function deleteRecord(sheetName, id) {
 function parseTugasToWaliKelas_(tugas) {
   if (!tugas) return '';
   var str = String(tugas).trim();
-  var match = str.match(/wali\s*kelas\s*(.*)/i);
-  return match && match[1] ? match[1].trim() : str;
+  var clean = str.replace(/^(guru\s*kelas|guru\s*kls|wali\s*kelas|wali\s*kls|guru|wali|kelas|kls)\s*/i, '').trim();
+  return clean || str;
 }
 
 /**
@@ -304,13 +318,54 @@ function parseTugasToWaliKelas_(tugas) {
 function getUsersFromSheet_() {
   var userSheet = getSheet(SHEETS.USER);
   var rawRows = sheetToObjects(userSheet.getName());
-  if (!rawRows || rawRows.length === 0) return [];
+
+  // Ambil data guru dari sheet Guru jika ada untuk melengkapi mapelAmpu / tugas wali kelas
+  var guruSheet = getSheet(SHEETS.GURU);
+  var rawGuru = guruSheet ? sheetToObjects(guruSheet.getName()) : [];
+
+  if (!rawRows || rawRows.length === 0) {
+    if (rawGuru && rawGuru.length > 0) {
+      return rawGuru.map(function(g, idx) {
+        var nama = String(g.nama || '').trim();
+        var username = String(g.id || g.nama || ('user_' + idx)).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        var tugas = String(g.mapelAmpu || g.waliKelas || g.tugas || '').trim();
+        var waliKelas = parseTugasToWaliKelas_(tugas);
+        return {
+          id: g.id || username,
+          username: username,
+          user: username,
+          password: '123',
+          namaGuru: nama,
+          nama: nama,
+          tugas: tugas,
+          waliKelas: waliKelas,
+          role: 'guru',
+          status: 'Aktif',
+          aktif: true
+        };
+      });
+    }
+    return [];
+  }
 
   return rawRows.map(function(r, idx) {
     var user = String(r.user || r.User || r.username || r.Username || '').trim();
     var pass = String(r.password || r.Password || '').trim();
     var nama = String(r['Nama Guru'] || r.namaGuru || r.nama || r.Nama || user).trim();
     var tugas = String(r.Tugas || r.tugas || r.waliKelas || '').trim();
+
+    // Cross-check dengan data Guru di spreadsheet
+    if (rawGuru && rawGuru.length > 0) {
+      var matchG = rawGuru.find(function(g) {
+        var gName = String(g.nama || '').trim().toLowerCase();
+        var uName = nama.trim().toLowerCase();
+        return gName === uName || String(g.id || '').trim().toLowerCase() === user.toLowerCase();
+      });
+      if (matchG && (matchG.mapelAmpu || matchG.waliKelas)) {
+        tugas = matchG.mapelAmpu || matchG.waliKelas;
+      }
+    }
+
     var rawStat = String(r.Status || r.status || 'Aktif').trim();
     var aktif = (rawStat.toLowerCase() === 'aktif' || rawStat === '1' || rawStat.toLowerCase() === 'active');
     var role = (user.toLowerCase() === 'admin') ? 'admin' : 'guru';
@@ -391,6 +446,23 @@ function doGet(e) {
 
       // ─── Guru ───────────
       case 'getGuru': {
+        const rawGuru = sheetToObjects(SHEETS.GURU);
+        if (rawGuru && rawGuru.length > 0) {
+          const mappedGuru = rawGuru.map(function(g) {
+            var t = g.mapelAmpu || g.waliKelas || g.tugas || '';
+            return {
+              id: g.id || '',
+              nama: g.nama || '',
+              nip: g.nip || '',
+              mapelAmpu: g.mapelAmpu || t,
+              waliKelas: g.waliKelas || t,
+              tugas: g.tugas || t,
+              telepon: g.telepon || '',
+              alamat: g.alamat || ''
+            };
+          });
+          return jsonResponse({ data: mappedGuru });
+        }
         const users = getUsersFromSheet_();
         if (users && users.length > 0) {
           const guruList = users.map(function(u) {
@@ -398,6 +470,7 @@ function doGet(e) {
               id: u.username || u.id,
               nama: u.namaGuru || u.username,
               waliKelas: u.waliKelas || u.tugas,
+              mapelAmpu: u.waliKelas || u.tugas,
               tugas: u.tugas || '',
               nip: '',
               telepon: '',
@@ -406,7 +479,7 @@ function doGet(e) {
           });
           return jsonResponse({ data: guruList });
         }
-        return jsonResponse({ data: sheetToObjects(SHEETS.GURU) });
+        return jsonResponse({ data: [] });
       }
 
       case 'getGuruById': {
