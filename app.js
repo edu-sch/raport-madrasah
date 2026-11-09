@@ -123,6 +123,40 @@ function avg(arr) {
 }
 
 /** Parse teks tugas menjadi nilai wali kelas sederhana (misal 'Wali Kelas 1 A' -> '1 A') */
+
+/**
+ * Parse teks Kelas & Rombel secara cerdas.
+ * Mampu membaca format: '5 - A', '5-A', '5 A', 'Kelas 5 A', 'Wali Kelas 5 A', '5'
+ */
+function parseKelasRombel(rawKelas, rawRombel) {
+  let k = String(rawKelas || '').trim();
+  let r = String(rawRombel || '').trim();
+  k = k.replace(/^(wali\s*kelas|kelas|kls)\s*/i, '').trim();
+  const m = k.match(/^(\d+|[IVXLCDM]+)\s*[-_/]?\s*([A-Za-z])$/i);
+  if (m) {
+    return { kelas: m[1], rombel: (r || m[2]).toUpperCase() };
+  }
+  const mNum = k.match(/^(\d+|[IVXLCDM]+)/i);
+  const cleanKelas = mNum ? mNum[1] : k;
+  return { kelas: cleanKelas, rombel: r.toUpperCase() };
+}
+
+/**
+ * Normalisasi array data siswa agar kelas dan rombel selalu terpisah bersih dan konsisten
+ */
+function normalizeSiswaList(rawList) {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map(s => {
+    const p = parseKelasRombel(s.kelas, s.rombel);
+    return {
+      ...s,
+      kelasRaw: s.kelas,
+      kelas: p.kelas,
+      rombel: p.rombel
+    };
+  });
+}
+
 function parseTugasToWaliKelas(tugas) {
   if (!tugas) return '';
   const str = String(tugas).trim();
@@ -139,10 +173,9 @@ function getGuruAssignedKelas() {
   if (!u || Auth.isAdmin()) return null;
   const raw = parseTugasToWaliKelas(u.waliKelas || u.tugas || '');
   if (!raw) return null;
-  const parts = raw.trim().split(/\s+/);
-  if (!parts.length) return null;
-  const kelas = parts[0]; // contoh "5"
-  const rombel = parts[1] || ''; // contoh "A"
+  const parsed = parseKelasRombel(raw, '');
+  const kelas = parsed.kelas; // contoh "5"
+  const rombel = parsed.rombel; // contoh "A"
   const num = parseInt(kelas, 10);
   let jenjang = 'MI';
   if (num >= 7 && num <= 9) jenjang = 'MTs';
@@ -237,6 +270,14 @@ const Modal = {
  * ─── NAVIGATION ────────────────────────────────────────────
  * ============================================================ */
 function navigate(page) {
+  // Guard khusus akun Guru: Hanya diizinkan Input Nilai dan Cetak Raport
+  if (typeof Auth !== 'undefined' && Auth.isGuru()) {
+    const guruAllowed = ['nilai', 'cetak'];
+    if (!guruAllowed.includes(page)) {
+      page = 'nilai';
+    }
+  }
+
   // Hide all pages
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   // Show target page
@@ -299,7 +340,7 @@ async function renderDashboard() {
       DataService.Kelas.getAll(),
     ]);
 
-    State.siswa = siswaRes.data || [];
+    State.siswa = normalizeSiswaList(siswaRes.data || []);
     State.guru  = guruRes.data  || [];
     State.kelas = kelasRes.data || [];
 
@@ -436,7 +477,7 @@ async function saveAllRombel() {
 async function renderSiswa() {
   try {
     const res = await DataService.Siswa.getAll();
-    State.siswa = res.data || [];
+    State.siswa = normalizeSiswaList(res.data || []);
     _applySiswaFilter();
   } catch (e) {
     Toast.error('Gagal memuat data siswa: ' + e.message);
@@ -503,17 +544,14 @@ function renderSiswaTable(list) {
         </td>
         <td><strong>${escHtml(s.kelas)}</strong></td>
         <td style="text-align:center">
-          <div class="rombel-select-group" style="display:inline-flex;gap:10px;align-items:center;background:var(--gray-50);padding:4px 8px;border-radius:6px;border:1px solid var(--gray-300)">
-            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-weight:700;font-size:0.88rem;color:${currentRombel === 'A' ? 'var(--green-dark)' : 'var(--gray-700)'}">
-              <input type="radio" name="rombel_radio_${s.id}" value="A" ${currentRombel === 'A' ? 'checked' : ''} onchange="markRombelDirty('${s.id}', 'A')" /> A
-            </label>
-            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-weight:700;font-size:0.88rem;color:${currentRombel === 'B' ? 'var(--green-dark)' : 'var(--gray-700)'}">
-              <input type="radio" name="rombel_radio_${s.id}" value="B" ${currentRombel === 'B' ? 'checked' : ''} onchange="markRombelDirty('${s.id}', 'B')" /> B
-            </label>
-            <label title="Kosongkan rombel" style="display:inline-flex;align-items:center;gap:2px;cursor:pointer;font-size:0.75rem;color:var(--gray-400)">
-              <input type="radio" name="rombel_radio_${s.id}" value="" ${!currentRombel ? 'checked' : ''} onchange="markRombelDirty('${s.id}', '')" /> ✕
-            </label>
-          </div>
+          ${(() => {
+            const r = String(s.rombel || '').trim().toUpperCase();
+            if (!r) return '<span style="color:var(--gray-400);font-size:0.85rem">-</span>';
+            const bg = r === 'A' ? '#e0f2fe' : (r === 'B' ? '#fef3c7' : '#f1f5f9');
+            const color = r === 'A' ? '#0369a1' : (r === 'B' ? '#92400e' : '#334155');
+            const border = r === 'A' ? '#bae6fd' : (r === 'B' ? '#fde68a' : '#cbd5e1');
+            return `<span class="badge" style="display:inline-block;min-width:32px;font-size:0.88rem;font-weight:800;padding:3px 10px;border-radius:6px;background:${bg};color:${color};border:1px solid ${border}" title="Rombel dibaca dari Spreadsheet">${escHtml(r)}</span>`;
+          })()}
         </td>
         <td>${escHtml(s.waliKelas || '-')}</td>
         <td>${escHtml(s.namaWali || '-')}</td>
@@ -909,6 +947,8 @@ async function populateNilaiMapelOptions(preferredId) {
   if (preferredId && list.some(m => m.id === preferredId)) {
     sel.value = preferredId;
   } else if (list.length > 0) {
+    sel.value = list[0].id; // Otomatis pilih mata pelajaran pertama agar tabel langsung tampil
+  } else if (list.length > 0) {
     sel.value = list[0].id;
   }
 }
@@ -952,6 +992,7 @@ async function renderNilaiControls() {
     const rSel = document.getElementById('nilai-rombel-sel');
     if (rSel && assigned.rombel) {
       rSel.value = assigned.rombel;
+      rSel.disabled = true; // Kunci rombel dari Google Sheet
     }
 
     await loadNilaiSiswaList();
@@ -1028,13 +1069,12 @@ async function loadNilaiSiswaList() {
   try {
     if (!State.siswa || !State.siswa.length) {
       const siswaRes = await DataService.Siswa.getAll();
-      State.siswa = siswaRes.data || [];
+      State.siswa = normalizeSiswaList(siswaRes.data || []);
     }
 
-    const normKelas = (str) => String(str || '').trim().toLowerCase().replace(/^kelas\s*/, '');
     const siswaKelas = State.siswa.filter(s => {
-      const matchJenjang = String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase();
-      const matchKelas   = normKelas(s.kelas) === normKelas(kelas);
+      const matchJenjang = !jenjang || String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase();
+      const matchKelas   = String(s.kelas || '').trim() === String(kelas).trim();
       const matchRombel  = !rombel || String(s.rombel || '').toUpperCase() === rombel.toUpperCase();
       return matchJenjang && matchKelas && matchRombel;
     }).sort((a, b) => a.nama.localeCompare(b.nama));
@@ -1074,6 +1114,13 @@ async function loadNilaiSiswaList() {
   }
 }
 
+
+function quickSwitchMapel(mapelId) {
+  const sel = document.getElementById('nilai-mapel-sel');
+  if (sel) sel.value = mapelId;
+  loadNilaiSiswaList();
+}
+
 function renderNilaiPerMapel(mapel, siswaList, existingMap) {
   const container = document.getElementById('nilai-siswa-list');
   const kkm = mapel.kkm ?? 70;
@@ -1103,6 +1150,20 @@ function renderNilaiPerMapel(mapel, siswaList, existingMap) {
     </div>
 
     <!-- Table -->
+    <!-- Quick Mapel Chips Selector -->
+    <div class="mapel-chips-wrapper" style="padding: 10px 14px; background: #f8fafc; border: 1px solid var(--gray-200); border-bottom: none; display: flex; gap: 8px; overflow-x: auto; align-items: center; border-radius: var(--radius) var(--radius) 0 0;">
+      <span style="font-size: 0.8rem; font-weight: 700; color: var(--gray-600); white-space: nowrap; margin-right: 4px;">Pilih Mapel:</span>
+      ${(State.mapel || []).filter(m => !State.filterNilai.jenjang || m.jenjang === State.filterNilai.jenjang).map(m => {
+        const isActive = m.id === mapel.id;
+        return `
+          <button type="button" class="btn btn-sm ${isActive ? 'btn-primary' : 'btn-outline'}" 
+            style="white-space: nowrap; font-size: 0.82rem; padding: 4px 12px; font-weight: ${isActive ? '700' : '600'};"
+            onclick="quickSwitchMapel('${m.id}')">
+            ${escHtml(m.nama)}
+          </button>
+        `;
+      }).join('')}
+    </div>
     <div class="nilai-table-wrap">
       <table class="nilai-table">
         <thead>
@@ -1493,7 +1554,7 @@ function handleTtdUpload(input) {
 async function renderCetak() {
   try {
     const res = await DataService.Siswa.getAll();
-    State.siswa = res.data || [];
+    State.siswa = normalizeSiswaList(res.data || []);
 
     const assigned = getGuruAssignedKelas();
     const jSel = document.getElementById('cetak-jenjang-sel');
@@ -1504,13 +1565,18 @@ async function renderCetak() {
       updateCetakKelasOptions();
       if (kSel) { kSel.value = assigned.kelas; kSel.disabled = true; }
       const rSel = document.getElementById('cetak-rombel-sel');
-      if (rSel && assigned.rombel) { rSel.value = assigned.rombel; }
+      if (rSel && assigned.rombel) { rSel.value = assigned.rombel; rSel.disabled = true; }
     } else {
       if (jSel) jSel.disabled = false;
       if (kSel) kSel.disabled = false;
     }
 
     populateCetakSiswaOptions();
+    const sel = document.getElementById('cetak-siswa-sel');
+    if (sel && sel.options.length > 1 && !sel.value) {
+      sel.value = sel.options[1].value;
+      await generateRaportPreview();
+    }
   } catch (e) {
     Toast.error('Gagal memuat data: ' + e.message);
   }
@@ -1527,11 +1593,12 @@ function populateCetakSiswaOptions() {
   let list = State.siswa;
 
   if (assigned && assigned.kelas) {
-    list = list.filter(s => normKelas(s.kelas) === normKelas(assigned.kelas));
-    if (rombel) list = list.filter(s => String(s.rombel || '').toUpperCase() === rombel.toUpperCase());
+    list = list.filter(s => String(s.kelas) === String(assigned.kelas));
+    if (assigned.rombel) list = list.filter(s => String(s.rombel || '').toUpperCase() === assigned.rombel.toUpperCase());
+    else if (rombel) list = list.filter(s => String(s.rombel || '').toUpperCase() === rombel.toUpperCase());
   } else {
     if (jenjang) list = list.filter(s => String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase());
-    if (kelas)   list = list.filter(s => normKelas(s.kelas) === normKelas(kelas));
+    if (kelas)   list = list.filter(s => String(s.kelas) === String(kelas));
     if (rombel)  list = list.filter(s => String(s.rombel || '').toUpperCase() === rombel.toUpperCase());
   }
 
@@ -2104,6 +2171,11 @@ const Auth = {
 
     if (hasSession) {
       this._showApp();
+      if (this.isGuru()) {
+        navigate('nilai');
+      } else {
+        navigate('dashboard');
+      }
     } else {
       this._showLogin();
     }
@@ -2257,7 +2329,11 @@ const Auth = {
 
       // Inisialisasi halaman dashboard & sinkronisasi data penuh setelah login berhasil
       SheetsAPI.setUrl(State.settings.sheetsUrl || 'https://script.google.com/macros/s/AKfycby_qJ7gIzI4xffuPjwKbzinRgq4YNQaFGrAgCbEavHW2-z6A1jpie4Dm2jxU_dznd-5/exec').then(updateConnectionStatus).catch(() => {});
-      navigate('dashboard');
+      if (this.isGuru()) {
+        navigate('nilai');
+      } else {
+        navigate('dashboard');
+      }
       syncAllData(false).catch(err => console.warn('Auto sync after login:', err));
 
     } catch (err) {
@@ -2333,8 +2409,8 @@ const Auth = {
   applyRoleRestrictions() {
     const isAdmin = this.isAdmin();
 
-    // Halaman yang bisa diakses oleh akun Guru: Dashboard, Data Siswa, Input Nilai, Cetak Raport
-    const guruAllowedPages = ['dashboard', 'siswa', 'nilai', 'cetak'];
+    // Halaman yang bisa diakses oleh akun Guru: HANYA Input Nilai dan Cetak Raport
+    const guruAllowedPages = ['nilai', 'cetak'];
 
     document.querySelectorAll('.nav-item[data-page]').forEach(item => {
       const page = item.dataset.page;
@@ -2954,7 +3030,7 @@ async function syncAllData(isManual = false) {
     ]);
 
     if (siswaRes.status === 'fulfilled' && Array.isArray(siswaRes.value?.data)) {
-      State.siswa = siswaRes.value.data;
+      State.siswa = normalizeSiswaList(siswaRes.value.data);
       localStorage.setItem('mdb_siswa', JSON.stringify(State.siswa));
     }
 
