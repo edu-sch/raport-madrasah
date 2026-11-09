@@ -207,6 +207,18 @@ DataStore.saveSettings(null, { tahun: '2025/2026', semester: 'Genap', tanggalCet
 const sUpdated = DataStore.getSettings();
 assert(sUpdated.tahunAjaran.semester === 'Genap' && sUpdated.tahunAjaran.tahun === '2025/2026', 'F05-H1', 'Pembaruan semester dan tahun ajaran berhasil');
 
+// Test ketersediaan opsi pilihan Tahun Ajaran: 2026/2027 hingga 5 tahun ke depan (2031/2032)
+const expectedYears = ['2026/2027', '2027/2028', '2028/2029', '2029/2030', '2030/2031', '2031/2032'];
+const appSource = fs.readFileSync(path.resolve(__dirname, '../app.js'), 'utf8');
+const indexSource = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+const hasAllYears = expectedYears.every(y => appSource.includes(y) && indexSource.includes(y));
+assert(
+  hasAllYears && indexSource.includes('<select id="setting-tahun-ajaran">') && indexSource.includes('<select id="nilai-ta-sel"'),
+  'F05-H2',
+  'Pilihan Tahun Ajaran berupa dropdown dari 2026/2027 hingga 5 tahun ke depan (2026/2027 s/d 2031/2032)'
+);
+
+
 // Kembalikan ke default
 DataStore.saveSettings(null, { tahun: '2024/2025', semester: 'Ganjil', tanggalCetak: '2024-12-21' });
 

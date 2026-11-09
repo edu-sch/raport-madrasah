@@ -184,7 +184,7 @@
         </button>
         <div class="topbar-info">
           <strong id="topbar-semester">Semester Ganjil</strong>
-          <span id="topbar-tahun">T.A. 2025/2026</span>
+          <span id="topbar-tahun">T.A. 2026/2027</span>
         </div>
         <span class="year-badge" id="topbar-ta-badge">
           MADRASAH DINIAH
@@ -501,7 +501,14 @@
             </div>
             <div class="form-group">
               <label>Tahun Ajaran</label>
-              <input type="text" id="nilai-ta-sel" placeholder="2025/2026" onchange="loadNilaiSiswaList()" />
+              <select id="nilai-ta-sel" onchange="loadNilaiSiswaList()">
+<option value="2026/2027" selected>2026/2027</option>
+                <option value="2027/2028">2027/2028</option>
+                <option value="2028/2029">2028/2029</option>
+                <option value="2029/2030">2029/2030</option>
+                <option value="2030/2031">2030/2031</option>
+                <option value="2031/2032">2031/2032</option>
+              </select>
             </div>
           </div>
           <div class="form-actions" style="border:none;padding:12px 0 0">
@@ -756,7 +763,14 @@
             </div>
             <div class="form-group" style="min-width:130px">
               <label>Tahun Ajaran</label>
-              <input type="text" id="cetak-ta-sel" placeholder="2025/2026" />
+              <select id="cetak-ta-sel" onchange="generateRaportPreview()">
+<option value="2026/2027" selected>2026/2027</option>
+                <option value="2027/2028">2027/2028</option>
+                <option value="2028/2029">2028/2029</option>
+                <option value="2029/2030">2029/2030</option>
+                <option value="2030/2031">2030/2031</option>
+                <option value="2031/2032">2031/2032</option>
+              </select>
             </div>
             <div class="form-group" style="align-self:flex-end;display:flex;gap:8px">
               <button class="btn btn-primary" onclick="generateRaportPreview()">
@@ -836,8 +850,14 @@
             <div class="form-grid">
               <div class="form-group">
                 <label>Tahun Ajaran Aktif</label>
-                <input type="text" id="setting-tahun-ajaran"
-                  placeholder="2025/2026" />
+                <select id="setting-tahun-ajaran">
+<option value="2026/2027" selected>2026/2027</option>
+                <option value="2027/2028">2027/2028</option>
+                <option value="2028/2029">2028/2029</option>
+                <option value="2029/2030">2029/2030</option>
+                <option value="2030/2031">2030/2031</option>
+                <option value="2031/2032">2031/2032</option>
+              </select>
               </div>
               <div class="form-group">
                 <label>Semester Aktif</label>

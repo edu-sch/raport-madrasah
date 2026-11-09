@@ -51,13 +51,39 @@ function genId() {
   return Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 7).toUpperCase();
 }
 
-/** Get current academic year string (e.g. "2025/2026") */
+/** Get current academic year string (defaults to 2026/2027) */
 function currentTahunAjaran() {
   const now = new Date();
   const y = now.getFullYear();
+  if (y < 2026) return '2026/2027';
   const m = now.getMonth() + 1; // 1-based
   return m >= 7 ? `${y}/${y + 1}` : `${y - 1}/${y}`;
 }
+
+/**
+ * Daftar pilihan Tahun Ajaran: 2026/2027 hingga 5 tahun ke depan (2031/2032)
+ */
+const TAHUN_AJARAN_LIST = [
+  '2026/2027',
+  '2027/2028',
+  '2028/2029',
+  '2029/2030',
+  '2030/2031',
+  '2031/2032'
+];
+
+/** Mengisi elemen select tahun ajaran dengan opsi 2026/2027 s/d 5 tahun ke depan */
+function populateTahunAjaranSelect(selectEl, selectedValue) {
+  if (!selectEl) return;
+  const currentVal = selectedValue || selectEl.value || (State.settings && State.settings.tahunAjaran) || currentTahunAjaran();
+  const list = [...TAHUN_AJARAN_LIST];
+  if (currentVal && !list.includes(currentVal)) {
+    list.unshift(currentVal);
+  }
+  selectEl.innerHTML = list.map(ta => '<option value="' + ta + '"' + (ta === currentVal ? ' selected' : '') + '>' + ta + '</option>').join('');
+  selectEl.value = currentVal;
+}
+
 
 /** Determine predikat from numeric grade */
 function getPredikat(nilai) {
@@ -968,7 +994,7 @@ async function renderNilaiControls() {
 
   const ta = State.filterNilai.tahunAjaran || State.settings.tahunAjaran || currentTahunAjaran();
   const taInput = document.getElementById('nilai-ta-sel');
-  if (taInput) taInput.value = ta;
+  if (taInput) populateTahunAjaranSelect(taInput, ta);
 
   updateNilaiKelasOptions();
   await populateNilaiMapelOptions(State.filterNilai.mapelId);
@@ -1572,6 +1598,8 @@ async function renderCetak() {
     }
 
     populateCetakSiswaOptions();
+    const cetakTaSel = document.getElementById('cetak-ta-sel');
+    if (cetakTaSel) populateTahunAjaranSelect(cetakTaSel, State.settings.tahunAjaran || currentTahunAjaran());
     const sel = document.getElementById('cetak-siswa-sel');
     if (sel && sel.options.length > 1 && !sel.value) {
       sel.value = sel.options[1].value;
@@ -1927,7 +1955,7 @@ function renderPengaturan() {
   if (urlInput) urlInput.value = s.sheetsUrl || SheetsAPI.getUrl() || '';
 
   const taInput = document.getElementById('setting-tahun-ajaran');
-  if (taInput) taInput.value = s.tahunAjaran || currentTahunAjaran();
+  if (taInput) populateTahunAjaranSelect(taInput, s.tahunAjaran || currentTahunAjaran());
 
   const semInput = document.getElementById('setting-semester');
   if (semInput) semInput.value = s.semester || 'Ganjil';
@@ -2021,6 +2049,10 @@ function savePengaturan() {
   // Sync filter defaults
   State.filterNilai.semester    = sem;
   State.filterNilai.tahunAjaran = ta;
+  const nilaiTa = document.getElementById('nilai-ta-sel');
+  if (nilaiTa) populateTahunAjaranSelect(nilaiTa, ta);
+  const cetakTa = document.getElementById('cetak-ta-sel');
+  if (cetakTa) populateTahunAjaranSelect(cetakTa, ta);
 
   Toast.success('Pengaturan berhasil disimpan');
 }
