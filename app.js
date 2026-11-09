@@ -1910,6 +1910,7 @@ async function generateRaportPreview() {
 
 function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala) {
   const jenjangLabel = JENJANG[siswa.jenjang] || siswa.jenjang;
+  const kelasLabel = `${escHtml(siswa.kelas || '')}${siswa.rombel ? ' - ' + escHtml(siswa.rombel) : ''}`;
 
   // Tempat & tanggal cetak dari pengaturan, atau fallback ke default
   const tempatCetak = State.settings.tempatCetak || 'Surabaya';
@@ -1979,7 +1980,6 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
       <div class="sig-nip">NIP. ${waliNip}</div>
     </div>`;
 
-  const kelasLabel = `${escHtml(siswa.kelas || '')}${siswa.rombel ? ' - ' + escHtml(siswa.rombel) : ''}`;
 
   return `
     <div class="raport-doc" id="raport-document">
