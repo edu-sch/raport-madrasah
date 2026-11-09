@@ -387,14 +387,18 @@ const App = (() => {
     const items = [];
     students.forEach(s => {
       const el = document.getElementById(`input-nilai-${s.id}`);
-      if (el && el.value !== '') {
-        items.push({ siswaId: s.id, score: el.value });
+      if (el) {
+        // Jika nilai kosong otomatis tersimpan 0
+        const raw = el.value.trim();
+        const score = (raw === '' || isNaN(parseFloat(raw))) ? 0 : parseFloat(raw);
+        items.push({ siswaId: s.id, score: score });
+        el.value = score;
         el.classList.remove('is-dirty');
       }
     });
 
     const count = DataStore.saveNilaiBatch(_activeMapelId, items);
-    toast(`Berhasil menyimpan nilai untuk ${count} santri!`, 'success');
+    toast(`Berhasil menyimpan nilai (${count} santri, nilai kosong otomatis tersimpan 0)!`, 'success');
   }
 
   // =========================================================================

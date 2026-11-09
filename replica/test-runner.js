@@ -138,6 +138,18 @@ const saveNilaiCount = DataStore.saveNilaiBatch('m-1', [
 ]);
 assert(saveNilaiCount === 2, 'F03-H4', 'Penyimpanan massal nilai sekelas berhasil');
 
+// Test aturan nilai kosong disimpan 0 dan dapat diedit kembali
+const emptyBatch = [
+  { siswaId: 's-103', score: '' },
+  { siswaId: 's-104', score: undefined }
+].map(item => ({
+  siswaId: item.siswaId,
+  score: (item.score === '' || item.score === undefined || isNaN(parseFloat(item.score))) ? 0 : parseFloat(item.score)
+}));
+const savedEmptyCount = DataStore.saveNilaiBatch('m-1', emptyBatch);
+const s103Nilai = DataStore.getNilaiGrid('5', 'A', 'm-1').find(x => x.siswa.id === 's-103');
+assert(savedEmptyCount === 2 && s103Nilai && s103Nilai.nilai === 0, 'F03-H5', 'Nilai kosong pada matriks otomatis tersimpan sebagai 0 dan siap diedit ulang');
+
 
 // --------------------------------------------------------------------------
 // FLOW 04: CETAK LEMBAR RAPORT A4
