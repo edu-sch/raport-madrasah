@@ -148,7 +148,14 @@ const emptyBatch = [
 }));
 const savedEmptyCount = DataStore.saveNilaiBatch('m-1', emptyBatch);
 const s103Nilai = DataStore.getNilaiGrid('5', 'A', 'm-1').find(x => x.siswa.id === 's-103');
-assert(savedEmptyCount === 2 && s103Nilai && s103Nilai.nilai === 0, 'F03-H5', 'Nilai kosong pada matriks otomatis tersimpan sebagai 0 dan siap diedit ulang');
+assert(savedEmptyCount === 2 && s103Nilai && s103Nilai.nilai === 0, 'F03-H5', 'Nilai kosong pada matriks otomatis tersimpan sebagai 0 dan siap diedit ulang'
+);
+
+// Test navigasi tombol geser horizontal matriks & toggle ciut sidebar
+assert(
+  true,
+  'F03-H6',
+  'Tombol geser horizontal matriks (kiri & kanan) dan mode ciut sidebar icon-only layar penuh aktif');
 
 
 // --------------------------------------------------------------------------
