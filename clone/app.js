@@ -170,13 +170,11 @@ const App = (() => {
       <div class="card">
         <div class="card-header">
           <div>
-            <h2 class="card-title">Daftar Santri & Pengaturan Rombel</h2>
-            <p style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">Tentukan pembagian rombel A atau B langsung pada tabel lalu klik Simpan.</p>
+            <h2 class="card-title">Daftar Santri & Rombel</h2>
+            <p style="font-size:12px;color:var(--color-text-muted);margin-top:2px;">Data santri, kelas, dan rombel dibaca langsung secara otomatis dari database spreadsheet.</p>
           </div>
           <div>
-            <button class="btn btn-md btn-primary" id="btn-save-rombel" onclick="App.saveAllRombel()" ${dirtyCount === 0 ? 'disabled' : ''}>
-              💾 Simpan Rombel ${dirtyCount > 0 ? `(${dirtyCount} Diubah)` : ''}
-            </button>
+            <span class="badge-pill badge-info" style="font-size:12px;">Mode Baca Otomatis</span>
           </div>
         </div>
 
@@ -192,7 +190,7 @@ const App = (() => {
                 <th>NIS</th>
                 <th>Nama Lengkap Santri</th>
                 <th>Kelas</th>
-                <th style="text-align: center; width: 180px;">Pilihan Rombel</th>
+                <th style="text-align: center; width: 100px;">Rombel</th>
                 <th>Nama Wali</th>
                 <th>Alamat</th>
               </tr>
@@ -221,14 +219,11 @@ const App = (() => {
           <td>${s.nama}</td>
           <td>Kelas ${s.kelas} ${s.jenjang}</td>
           <td style="text-align: center;">
-            <label style="margin-right: 12px; cursor: pointer;">
-              <input type="radio" name="rombel_${s.id}" value="A" ${currentRombel === 'A' ? 'checked' : ''} onchange="App.setRombelDirty('${s.id}', 'A')" />
-              <strong>A</strong>
-            </label>
-            <label style="cursor: pointer;">
-              <input type="radio" name="rombel_${s.id}" value="B" ${currentRombel === 'B' ? 'checked' : ''} onchange="App.setRombelDirty('${s.id}', 'B')" />
-              <strong>B</strong>
-            </label>
+            ${(() => {
+              const r = String(s.rombel || '').trim().toUpperCase();
+              if (!r) return '<span style="color:var(--color-text-muted);">-</span>';
+              return `<span class="badge-pill ${r === 'A' ? 'badge-info' : 'badge-gold'}" style="font-weight:800;font-size:12px;padding:3px 12px;">${r}</span>`;
+            })()}
           </td>
           <td>${s.wali}</td>
           <td>${s.alamat}</td>
