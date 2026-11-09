@@ -1962,12 +1962,10 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
         <div class="sig-title">Mengetahui,<br>${kepalaJabatan}</div>
         <img src="${escHtml(kepala.ttdUrl)}" class="sig-image" alt="TTD Kepala" />
         <div class="sig-name">${kepalaNama}</div>
-        <div class="sig-nip">NIP. ${kepalaNip}</div>
       </div>`
     : `<div class="sig-block">
         <div class="sig-title">Mengetahui,<br>${kepalaJabatan}</div>
         <div class="sig-name">${kepalaNama}</div>
-        <div class="sig-nip">NIP. ${kepalaNip}</div>
       </div>`;
 
   // Wali Kelas info (SEBELAH KANAN - LENGKAP DENGAN TANGGAL)
@@ -1979,7 +1977,6 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
   const waliHtml = `<div class="sig-block">
       <div class="sig-title">${lokasiTanggal}<br>Wali Kelas ${kelasLabel}</div>
       <div class="sig-name">${waliNama}</div>
-      <div class="sig-nip">NIP. ${waliNip}</div>
     </div>`;
 
 
