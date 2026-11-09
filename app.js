@@ -174,8 +174,14 @@ function normalizeSiswaList(rawList) {
   if (!Array.isArray(rawList)) return [];
   return rawList.map(s => {
     const p = parseKelasRombel(s.kelas, s.rombel);
+    const nisn = String(s.nisn || s.NISN || s.Nisn || s['Nomor Induk Siswa Nasional'] || s['No Induk Siswa Nasional'] || '').trim();
+    const nis = String(s.nis || s.NIS || s.Nis || '').trim();
+    const nama = String(s.nama || s.Nama || s.namaSiswa || s['Nama Siswa'] || s['Nama Lengkap'] || '').trim();
     return {
       ...s,
+      nama: nama || s.nama || '-',
+      nis: nis || s.nis || '-',
+      nisn: nisn || s.nisn || '',
       kelasRaw: s.kelas,
       kelas: p.kelas,
       rombel: p.rombel
@@ -2240,6 +2246,18 @@ function savePengaturan() {
   const cetakTa = document.getElementById('cetak-ta-sel');
   if (cetakTa) populateTahunAjaranSelect(cetakTa, ta);
 
+  
+  // Sinkronkan ke Google Spreadsheet jika terhubung
+  if (typeof DataService !== 'undefined' && DataService.Pengaturan) {
+    DataService.Pengaturan.save({
+      id: 'config_utama',
+      tahunAjaran: ta,
+      semester: sem,
+      tempatCetak: tempat,
+      tanggalCetak: tanggal
+    }).catch(err => console.warn('Sync pengaturan ke Google Sheets gagal:', err));
+  }
+
   Toast.success('Pengaturan berhasil disimpan');
 }
 
@@ -3237,14 +3255,15 @@ async function syncAllData(isManual = false) {
     SheetsAPI.clearCache();
 
     // Unduh semua koleksi secara paralel
-    const [siswaRes, akunRes, guruRes, mapelRes, kelasRes, kepalaRes, nilaiRes] = await Promise.allSettled([
+    const [siswaRes, akunRes, guruRes, mapelRes, kelasRes, kepalaRes, nilaiRes, pengRes] = await Promise.allSettled([
       SheetsAPI.Siswa.getAll(),
       SheetsAPI.Akun.getAll(),
       SheetsAPI.Guru.getAll(),
       SheetsAPI.Mapel.getAll(),
       SheetsAPI.Kelas.getAll(),
       SheetsAPI.Kepala.get(),
-      SheetsAPI.Nilai.getAll()
+      SheetsAPI.Nilai.getAll(),
+      SheetsAPI.Pengaturan ? SheetsAPI.Pengaturan.get() : Promise.resolve({ data: null })
     ]);
 
     if (siswaRes.status === 'fulfilled' && Array.isArray(siswaRes.value?.data)) {
@@ -3319,6 +3338,20 @@ async function syncAllData(isManual = false) {
       State.nilai = nilaiRes.value.data;
       localStorage.setItem('mdb_nilai', JSON.stringify(State.nilai));
     }
+
+    if (pengRes && pengRes.status === 'fulfilled' && pengRes.value?.data) {
+      const cfg = pengRes.value.data;
+      if (cfg.tahunAjaran) State.settings.tahunAjaran = cfg.tahunAjaran;
+      if (cfg.semester)    State.settings.semester = cfg.semester;
+      if (cfg.tempatCetak) State.settings.tempatCetak = cfg.tempatCetak;
+      if (cfg.tanggalCetak !== undefined) State.settings.tanggalCetak = cfg.tanggalCetak;
+      saveSettings();
+      const topbarSem = document.getElementById('topbar-semester');
+      if (topbarSem && State.settings.semester) topbarSem.textContent = 'Semester ' + State.settings.semester;
+      const topbarTa = document.getElementById('topbar-tahun');
+      if (topbarTa && State.settings.tahunAjaran) topbarTa.textContent = 'T.A. ' + State.settings.tahunAjaran;
+    }
+
 
     // Refresh halaman yang aktif jika ada
     const activeSection = document.querySelector('.page.active');
@@ -3731,6 +3764,7 @@ async function saveNilaiMatriks() {
         nilai: numVal,
         jenjang: jenjang,
         kelas: kelas,
+        rombel: s.rombel || State.filterNilai.rombel || '',
         semester: semester,
         tahunAjaran: ta
       });

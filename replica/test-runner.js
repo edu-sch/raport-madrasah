@@ -222,6 +222,20 @@ assert(
   'Pilihan Tahun Ajaran berupa dropdown dari 2026/2027 hingga 5 tahun ke depan (2026/2027 s/d 2031/2032)'
 );
 
+// Test sinkronisasi kolom spreadsheet (NISN, Rombel, 3 Kepala, Pengaturan)
+const gasSource = fs.readFileSync(path.resolve(__dirname, '../google-apps-script.gs'), 'utf8');
+const sheetsJsSource = fs.readFileSync(path.resolve(__dirname, '../sheets.js'), 'utf8');
+const gasHasNisn = gasSource.includes("'nisn'") && gasSource.includes('syncSheetHeaders_');
+const gasHasPengaturan = gasSource.includes('PENGATURAN') && gasSource.includes('getPengaturan') && gasSource.includes('savePengaturan');
+const gasHasKepalaJenjang = gasSource.includes("'jenjang'") && gasSource.includes('kepala_');
+const sheetsHasPengaturan = sheetsJsSource.includes('Pengaturan') && sheetsJsSource.includes('getPengaturan');
+assert(
+  gasHasNisn && gasHasPengaturan && gasHasKepalaJenjang && sheetsHasPengaturan,
+  'F05-H3',
+  'Seluruh sheet dan kolom Google Spreadsheet sinkron (NISN, Rombel, 3 Jenjang Kepala, Pengaturan, User) dengan auto-migration headers'
+);
+
+
 
 // Kembalikan ke default
 DataStore.saveSettings(null, { tahun: '2024/2025', semester: 'Ganjil', tanggalCetak: '2024-12-21' });

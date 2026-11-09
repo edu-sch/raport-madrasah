@@ -192,7 +192,7 @@ const SheetsAPI = (() => {
 
   // ─── Kepala Madrasah ───────────────────────────────────────
   const Kepala = {
-    async get()          { return _get('getKepala', {}, false); },
+    async get(jenjang)   { return _get('getKepala', jenjang ? { jenjang } : {}, false); },
     async save(data)     { return _post('saveKepala', { data }); },
   };
 
@@ -216,10 +216,17 @@ const SheetsAPI = (() => {
     async delete(id)   { return _post('deleteUser', { id }); },
   };
 
+  // ─── Pengaturan ─────────────────────────────────────────────
+  const Pengaturan = {
+    async get()      { return _get('getPengaturan', {}, false); },
+    async save(data) { return _post('savePengaturan', { data }); },
+  };
+
+
   return {
     setUrl, getUrl, isConnected, getLastError,
     testConnection,
-    Siswa, Nilai, Mapel, Guru, Kepala, Kelas, Akun, User,
+    Siswa, Nilai, Mapel, Guru, Kepala, Kelas, Akun, User, Pengaturan,
     clearCache: _clearCache,
   };
 })();
@@ -314,7 +321,8 @@ const LocalStore = (() => {
       return {
         data: all.filter(n =>
           (!jenjang      || n.jenjang      === jenjang) &&
-          (!kelas        || n.kelas        === kelas) &&
+          (!kelas        || String(n.kelas).trim() === String(kelas).trim()) &&
+        (!rombel       || !n.rombel || String(n.rombel).trim().toUpperCase() === String(rombel).trim().toUpperCase()) &&
           (!semester     || n.semester     === semester) &&
           (!tahunAjaran  || n.tahunAjaran  === tahunAjaran)
         )
@@ -334,12 +342,41 @@ const LocalStore = (() => {
   };
 
   const Kepala = {
-    async get() {
-      return { data: _load('kepala', null) };
+    async get(jenjang) {
+      let list = _load('kepala_list', null);
+      if (!Array.isArray(list) || !list.length) {
+        const single = _load('kepala', null);
+        if (single) {
+          single.jenjang = single.jenjang || 'MI';
+          single.id = single.id || 'kepala_MI';
+          list = [single];
+        } else {
+          list = [];
+        }
+      }
+      if (jenjang) {
+        const found = list.find(k => String(k.jenjang || '').toUpperCase() === jenjang.toUpperCase() || k.id === 'kepala_' + jenjang.toUpperCase());
+        return { data: found || list[0] || null, list };
+      }
+      return { data: list[0] || null, list };
     },
     async save(data) {
+      const jenjang = String(data.jenjang || 'MI').toUpperCase();
+      if (!data.id) data.id = 'kepala_' + jenjang;
+      data.jenjang = jenjang;
+
+      let list = _load('kepala_list', null);
+      if (!Array.isArray(list)) {
+        const single = _load('kepala', null);
+        list = single ? [single] : [];
+      }
+      const idx = list.findIndex(k => k.id === data.id || String(k.jenjang || '').toUpperCase() === jenjang);
+      if (idx >= 0) list[idx] = data;
+      else list.push(data);
+
+      _save('kepala_list', list);
       _save('kepala', data);
-      return { data, ok: true };
+      return { data, list, ok: true };
     },
   };
 
@@ -399,5 +436,6 @@ const DataService = (() => {
     get Kelas()   { return _store().Kelas; },
     get Akun()    { return _store().Akun; },
     get User()    { return _store().User || _store().Akun; },
+    get Pengaturan() { return _store().Pengaturan; },
   };
 })();

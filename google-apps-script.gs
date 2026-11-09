@@ -34,14 +34,15 @@ function getSpreadsheet() {
 
 // ── Sheet name constants ───────────────────────────────────────
 const SHEETS = {
-  SISWA:  'Siswa',
-  NILAI:  'Nilai',
-  MAPEL:  'MapelConfig',
-  GURU:   'GuruData',
-  KEPALA: 'KepalaData',
-  KELAS:  'Kelas',
-  AKUN:   'AkunGuru',
-  USER:   'User',
+  SISWA:      'Siswa',
+  NILAI:      'Nilai',
+  MAPEL:      'MapelConfig',
+  GURU:       'GuruData',
+  KEPALA:     'KepalaData',
+  KELAS:      'Kelas',
+  AKUN:       'AkunGuru',
+  USER:       'User',
+  PENGATURAN: 'Pengaturan',
 };
 
 // ── CORS Headers ───────────────────────────────────────────────
@@ -74,25 +75,28 @@ function getSheet(name) {
     const allSheets = ss.getSheets();
     for (let i = 0; i < allSheets.length; i++) {
       if (allSheets[i].getName().trim().toLowerCase() === name.toLowerCase()) {
-        return allSheets[i];
+        sheet = allSheets[i];
+        break;
       }
     }
   }
 
+  // Header definisi standar (lengkap dengan NISN, Rombel, Jenjang Kepala, Pengaturan)
+  const defaultHeaders = {
+    [SHEETS.SISWA]:      ['id','nama','nis','nisn','jenjang','kelas','rombel','alamat','namaWali','waliKelas','tempatLahir','tanggalLahir','jenisKelamin','createdAt','updatedAt'],
+    [SHEETS.NILAI]:      ['id','siswaId','mapelId','mapelNama','guru','nilai','jenjang','kelas','rombel','semester','tahunAjaran','updatedAt'],
+    [SHEETS.MAPEL]:      ['id','jenjang','nama','urutan','kkm','guru'],
+    [SHEETS.GURU]:       ['id','nama','nip','telepon','alamat','waliKelas'],
+    [SHEETS.KEPALA]:     ['id','jenjang','nama','nip','jabatan','ttdUrl','updatedAt'],
+    [SHEETS.KELAS]:      ['id','nama','jenjang'],
+    [SHEETS.AKUN]:       ['id','username','namaGuru','role','waliKelas','passwordHash','aktif','createdAt','updatedAt'],
+    [SHEETS.USER]:       ['user','password','Nama Guru','Tugas','Status'],
+    [SHEETS.PENGATURAN]: ['id','tahunAjaran','semester','tempatCetak','tanggalCetak','namaMadrasah','alamatMadrasah','updatedAt'],
+  };
+
   if (!sheet) {
     sheet = ss.insertSheet(name);
-    // Initialize headers
-    const headers = {
-      [SHEETS.SISWA]:  ['id','nama','nis','jenjang','kelas','rombel','alamat','namaWali','waliKelas','tempatLahir','tanggalLahir','jenisKelamin','createdAt','updatedAt'],
-      [SHEETS.NILAI]:  ['id','siswaId','mapelId','mapelNama','guru','nilai','jenjang','kelas','semester','tahunAjaran','updatedAt'],
-      [SHEETS.MAPEL]:  ['id','jenjang','nama','urutan','kkm'],
-      [SHEETS.GURU]:   ['id','nama','nip','telepon','alamat','waliKelas'],
-      [SHEETS.KEPALA]: ['id','nama','nip','jabatan','ttdUrl'],
-      [SHEETS.KELAS]:  ['id','nama','jenjang'],
-      [SHEETS.AKUN]:   ['id','username','namaGuru','role','waliKelas','passwordHash','aktif','createdAt','updatedAt'],
-      [SHEETS.USER]:   ['user','password','Nama Guru','Tugas','Status'],
-    };
-    const h = headers[name];
+    const h = defaultHeaders[name];
     if (h) {
       sheet.getRange(1, 1, 1, h.length).setValues([h]);
       // Style header row
@@ -107,9 +111,51 @@ function getSheet(name) {
         sheet.appendRow(['admin', 'admin123', 'Administrator', 'Admin', 'Aktif']);
         sheet.appendRow(['pakguru', '123456', 'H. MUSTOFA ALI', 'Wali Kelas 1 A', 'Aktif']);
       }
+      if (name === SHEETS.PENGATURAN) {
+        sheet.appendRow(['config_utama', '2026/2027', 'Ganjil', 'Surabaya', '', 'MADRASAH DINIAH DARUL BAROKAH', 'JATIPURWO IV/14A SURABAYA', new Date().toISOString()]);
+      }
     }
+  } else {
+    // Sinkronisasi otomatis kolom header jika ada kolom baru yang belum ada di spreadsheet
+    syncSheetHeaders_(sheet, defaultHeaders[name]);
   }
   return sheet;
+}
+
+/**
+ * Otomatis menambahkan kolom header baru yang belum ada di spreadsheet tanpa merusak data lama
+ */
+function syncSheetHeaders_(sheet, requiredHeaders) {
+  if (!sheet || !requiredHeaders || requiredHeaders.length === 0) return;
+  const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) {
+    sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
+    sheet.getRange(1, 1, 1, requiredHeaders.length)
+      .setBackground('#1a5276')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    return;
+  }
+
+  const existingHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim());
+  const existingLower = existingHeaders.map(h => h.toLowerCase());
+
+  const missing = [];
+  requiredHeaders.forEach(req => {
+    if (!existingLower.includes(req.toLowerCase())) {
+      missing.push(req);
+    }
+  });
+
+  if (missing.length > 0) {
+    const startCol = lastCol + 1;
+    sheet.getRange(1, startCol, 1, missing.length).setValues([missing]);
+    sheet.getRange(1, startCol, 1, missing.length)
+      .setBackground('#1a5276')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold');
+  }
 }
 
 // ── Sheet Data Helpers ─────────────────────────────────────────
@@ -122,21 +168,55 @@ function sheetToObjects(sheetName) {
   if (data.length < 2) return [];
 
   const headers = data[0].map(h => String(h).trim());
-  return data.slice(1).map(row => {
+  return data.slice(1).map((row, rowIdx) => {
     const obj = {};
-    headers.forEach((h, i) => { obj[h] = row[i] ?? ''; });
+    headers.forEach((h, i) => { 
+      const val = row[i] ?? '';
+      obj[h] = val;
+      const lowerH = h.toLowerCase();
+      if (lowerH === 'nisn' && obj.nisn === undefined) obj.nisn = String(val).trim();
+      if (lowerH === 'nis' && obj.nis === undefined) obj.nis = String(val).trim();
+      if (lowerH === 'nama' && obj.nama === undefined) obj.nama = String(val).trim();
+      if (lowerH === 'jenjang' && obj.jenjang === undefined) obj.jenjang = String(val).trim().toUpperCase();
+      if (lowerH === 'kelas' && obj.kelas === undefined) obj.kelas = String(val).trim();
+      if (lowerH === 'rombel' && obj.rombel === undefined) obj.rombel = String(val).trim().toUpperCase();
+    });
+
+    if (!obj.id) {
+      if (sheetName === SHEETS.SISWA) {
+        obj.id = obj.nis ? 's_' + obj.nis : 's_' + (rowIdx + 1);
+      } else if (sheetName === SHEETS.KEPALA) {
+        obj.id = 'kepala_' + (obj.jenjang || 'MI');
+      } else {
+        obj.id = 'rec_' + (rowIdx + 1);
+      }
+    }
+
     return obj;
   });
 }
 
 /**
- * Find row index (1-based, including header) by id
+ * Find row index (1-based, including header) by id or smart attributes (nis/username)
  */
-function findRowById(sheetName, id) {
+function findRowById(sheetName, id, obj = null) {
   const sheet = getSheet(sheetName);
   const data  = sheet.getDataRange().getValues();
+  if (data.length < 2) return -1;
+  const headers = data[0].map(h => String(h).trim().toLowerCase());
+  const idCol = headers.indexOf('id');
+  const nisCol = headers.indexOf('nis');
+
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(id)) return i + 1; // 1-based
+    if (idCol >= 0 && String(data[i][idCol]).trim() === String(id).trim()) {
+      return i + 1;
+    }
+    if (idCol < 0 && String(data[i][0]).trim() === String(id).trim()) {
+      return i + 1;
+    }
+    if (obj && obj.nis && nisCol >= 0 && String(data[i][nisCol]).trim() === String(obj.nis).trim()) {
+      return i + 1;
+    }
   }
   return -1;
 }
@@ -146,15 +226,32 @@ function findRowById(sheetName, id) {
  */
 function getHeaders(sheetName) {
   const sheet = getSheet(sheetName);
-  const row   = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) return [];
+  const row   = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   return row.map(h => String(h).trim());
 }
 
 /**
- * Convert object to row array matching sheet headers
+ * Convert object to row array matching sheet headers (case-insensitive & alias-aware)
  */
 function objectToRow(obj, headers) {
-  return headers.map(h => obj[h] !== undefined ? obj[h] : '');
+  return headers.map(h => {
+    if (obj[h] !== undefined && obj[h] !== null) return obj[h];
+    const lowerH = String(h).trim().toLowerCase();
+    for (const key of Object.keys(obj)) {
+      if (key.toLowerCase() === lowerH && obj[key] !== undefined && obj[key] !== null) {
+        return obj[key];
+      }
+    }
+    if (lowerH === 'nisn') return obj.nisn || obj.NISN || '';
+    if (lowerH === 'nis') return obj.nis || obj.NIS || '';
+    if (lowerH === 'nama') return obj.nama || obj.namaSiswa || obj['Nama Siswa'] || '';
+    if (lowerH === 'rombel') return obj.rombel || obj.Rombel || '';
+    if (lowerH === 'jenjang') return obj.jenjang || obj.Jenjang || '';
+    if (lowerH === 'kelas') return obj.kelas || obj.Kelas || '';
+    return '';
+  });
 }
 
 /**
@@ -163,12 +260,17 @@ function objectToRow(obj, headers) {
 function upsertRecord(sheetName, obj) {
   const sheet   = getSheet(sheetName);
   const headers = getHeaders(sheetName);
+  const rowIdx  = findRowById(sheetName, obj.id, obj);
   const row     = objectToRow(obj, headers);
-  const rowIdx  = findRowById(sheetName, obj.id);
 
   if (rowIdx > 0) {
     sheet.getRange(rowIdx, 1, 1, row.length).setValues([row]);
   } else {
+    const idCol = headers.map(h => h.toLowerCase()).indexOf('id');
+    if (idCol >= 0 && !obj.id) {
+      obj.id = (obj.nis ? 's_' + obj.nis : (typeof genId_ === 'function' ? genId_() : Utilities.getUuid().substring(0, 8)));
+      row[idCol] = obj.id;
+    }
     sheet.appendRow(row);
   }
   return obj;
@@ -267,10 +369,11 @@ function doGet(e) {
       }
 
       case 'getNilaiByKelas': {
-        const { jenjang, kelas, semester, tahunAjaran } = e.parameter;
+        const { jenjang, kelas, rombel, semester, tahunAjaran } = e.parameter;
         let all = sheetToObjects(SHEETS.NILAI);
         if (jenjang)     all = all.filter(n => n.jenjang === jenjang);
-        if (kelas)       all = all.filter(n => n.kelas === kelas);
+        if (kelas)       all = all.filter(n => String(n.kelas).trim() === String(kelas).trim());
+        if (rombel)      all = all.filter(n => !n.rombel || String(n.rombel).trim().toUpperCase() === String(rombel).trim().toUpperCase());
         if (semester)    all = all.filter(n => n.semester === semester);
         if (tahunAjaran) all = all.filter(n => n.tahunAjaran === tahunAjaran);
         return jsonResponse({ data: all });
@@ -330,7 +433,12 @@ function doGet(e) {
       // ─── Kepala ─────────
       case 'getKepala': {
         const all = sheetToObjects(SHEETS.KEPALA);
-        return jsonResponse({ data: all[0] || null });
+        const j = (body?.jenjang || e?.parameter?.jenjang || '').toUpperCase();
+        if (j) {
+          const match = all.find(k => String(k.jenjang || '').toUpperCase() === j || String(k.id || '').toUpperCase() === 'KEPALA_' + j);
+          return jsonResponse({ data: match || all[0] || null, list: all });
+        }
+        return jsonResponse({ data: all[0] || null, list: all });
       }
 
       // ─── Kelas ──────────
@@ -360,6 +468,12 @@ function doGet(e) {
           all = [defaultAdmin];
         }
         return jsonResponse({ data: all });
+      }
+
+      // ─── Pengaturan ────
+      case 'getPengaturan': {
+        const all = sheetToObjects(SHEETS.PENGATURAN);
+        return jsonResponse({ data: all[0] || null });
       }
 
       default:
@@ -492,16 +606,15 @@ function doPost(e) {
         const data = body.data;
         if (!data) return errorResponse('Data diperlukan');
 
-        // Kepala is a singleton: clear and re-insert
-        const sheet = getSheet(SHEETS.KEPALA);
-        const lastRow = sheet.getLastRow();
-        if (lastRow > 1) sheet.deleteRows(2, lastRow - 1);
+        const jenjang = String(data.jenjang || 'MI').toUpperCase();
+        if (!data.id) data.id = 'kepala_' + jenjang;
+        data.jenjang = jenjang;
 
-        if (!data.id) data.id = 'kepala_1';
-        const headers = getHeaders(SHEETS.KEPALA);
-        sheet.appendRow(objectToRow(data, headers));
+        // Upsert record berdasarkan ID (kepala_MI, kepala_MTs, kepala_MA)
+        upsertRecord(SHEETS.KEPALA, data);
 
-        return jsonResponse({ ok: true, data });
+        const all = sheetToObjects(SHEETS.KEPALA);
+        return jsonResponse({ ok: true, data, list: all });
       }
 
       // ─── Kelas ──────────────────────
@@ -563,6 +676,16 @@ function doPost(e) {
         return jsonResponse({ ok: true });
       }
 
+      // ─── Pengaturan ─────────────────
+      case 'savePengaturan': {
+        const data = body.data;
+        if (!data) return errorResponse('Data diperlukan');
+        data.id = data.id || 'config_utama';
+        data.updatedAt = new Date().toISOString();
+        upsertRecord(SHEETS.PENGATURAN, data);
+        return jsonResponse({ ok: true, data });
+      }
+
       default:
         return errorResponse('Action tidak dikenal: ' + action);
     }
@@ -588,6 +711,21 @@ function initSheets() {
   const existing = sheetToObjects(SHEETS.MAPEL);
   if (existing.length === 0) {
     seedDefaultMapel_();
+  }
+
+  // Seed default Pengaturan if empty
+  const existingConfig = sheetToObjects(SHEETS.PENGATURAN);
+  if (existingConfig.length === 0) {
+    upsertRecord(SHEETS.PENGATURAN, {
+      id: 'config_utama',
+      tahunAjaran: '2026/2027',
+      semester: 'Ganjil',
+      tempatCetak: 'Surabaya',
+      tanggalCetak: '',
+      namaMadrasah: 'MADRASAH DINIAH DARUL BAROKAH',
+      alamatMadrasah: 'JATIPURWO IV/14A SURABAYA',
+      updatedAt: new Date().toISOString()
+    });
   }
 
   SpreadsheetApp.getUi().alert(
