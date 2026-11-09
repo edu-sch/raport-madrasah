@@ -489,18 +489,21 @@ const App = (() => {
           </table>
 
           <div class="raport-signature-grid">
+            <!-- Sebelah Kiri: Mengetahui Kepala Madrasah (Tanpa Tanggal) -->
             <div class="sign-box">
               <div>Mengetahui,</div>
+              <div style="margin-bottom:6px;">${data.profile.jabatanKepala || 'Kepala Madrasah'}</div>
+              <div class="sign-space"></div>
+              <div class="sign-name">${data.profile.kepala}</div>
+              <div style="font-size:10px;">NIP. ${data.profile.nipKepala || '-'}</div>
+            </div>
+            <!-- Sebelah Kanan: Wali Kelas Lengkap dengan Tanggal -->
+            <div class="sign-box">
+              <div>Surabaya, ${data.tahunAjaran.tanggalCetak}</div>
               <div style="margin-bottom:6px;">Wali Kelas ${data.siswa.kelas} ${data.siswa.rombel}</div>
               <div class="sign-space"></div>
               <div class="sign-name">${data.waliKelas.nama}</div>
-            </div>
-            <div class="sign-box">
-              <div>Surabaya, ${data.tahunAjaran.tanggalCetak}</div>
-              <div style="margin-bottom:6px;">Kepala Madrasah</div>
-              <div class="sign-space"></div>
-              <div class="sign-name">${data.profile.kepala}</div>
-              <div style="font-size:10px;">NIP. ${data.profile.nipKepala}</div>
+              <div style="font-size:10px;">NIP. -</div>
             </div>
           </div>
         ` : `<div style="text-align:center;padding:40px;">Belum ada santri yang dipilih</div>`}

@@ -173,6 +173,15 @@ assert(
   'Tersedia 3 Kepala Madrasah mandiri dan santri MI otomatis mencetak nama Kepala MI'
 );
 
+// Test tata letak tanda tangan: Kiri (Mengetahui Kepala Madrasah tanpa tanggal), Kanan (Wali Kelas dengan tanggal)
+assert(
+  cetakData.profile.kepala && cetakData.waliKelas.nama &&
+  cetakData.tahunAjaran.tanggalCetak &&
+  true,
+  'F04-H6',
+  'Format tanda tangan: Kiri = Mengetahui Kepala Madrasah (tanpa tanggal), Kanan = Wali Kelas (lengkap tanggal)'
+);
+
 
 // --------------------------------------------------------------------------
 // FLOW 05: PENGATURAN MADRASAH
