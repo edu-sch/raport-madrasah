@@ -19,9 +19,9 @@ const SCHOOL = {
 };
 
 const JENJANG = {
-  MI:  'MADRASAH IBTIDAIYAH (MI)',
-  MTs: 'MADRASAH TSANAWIYAH (MTs)',
-  MA:  'MADRASAH ALIYAH (MA)',
+  MI:  'MADRASAH IBTIDAIYAH',
+  MTs: 'MADRASAH TSANAWIYAH',
+  MA:  'MADRASAH ALIYAH',
 };
 
 /** Default subjects by jenjang level */
@@ -931,12 +931,16 @@ async function confirmDeleteGuru(id, nama) {
 /* ============================================================
  * ─── INPUT NILAI PAGE (PER MATA PELAJARAN) ──────────────────
  * ============================================================ */
-let _nilaiMode = 'mapel'; // 'mapel' | 'absen'
+let _nilaiMode = 'matrix'; // 'matrix' | 'absen' | 'mapel'
+let _currentMatrixMap = {}; // key: `${siswaId}_${mapelId}` -> numeric grade or ''
+let _currentMatrixSiswaList = [];
+let _currentMatrixMapelList = [];
 let _currentNilaiMap = {}; // siswaId => numeric grade
 let _currentAbsenMap = {}; // siswaId => { hadir, sakit, izin, alpa, catatan }
 
 function switchNilaiMode(mode) {
   _nilaiMode = mode;
+  document.getElementById('tab-nilai-matrix')?.classList.toggle('active', mode === 'matrix');
   document.getElementById('tab-nilai-mapel')?.classList.toggle('active', mode === 'mapel');
   document.getElementById('tab-nilai-absen')?.classList.toggle('active', mode === 'absen');
 
@@ -945,7 +949,9 @@ function switchNilaiMode(mode) {
 
   const filterTitle = document.getElementById('nilai-filter-title');
   if (filterTitle) {
-    filterTitle.textContent = mode === 'mapel' ? 'Filter Mata Pelajaran & Kelas' : 'Filter Kelas (Rekap Kehadiran & Catatan)';
+    filterTitle.textContent = mode === 'matrix' 
+      ? 'Filter Kelas (Matriks Semua Mapel)'
+      : (mode === 'mapel' ? 'Filter Mata Pelajaran & Kelas' : 'Filter Kelas (Rekap Kehadiran & Catatan)');
   }
 
   loadNilaiSiswaList();
@@ -995,6 +1001,16 @@ async function renderNilaiControls() {
   const ta = State.filterNilai.tahunAjaran || State.settings.tahunAjaran || currentTahunAjaran();
   const taInput = document.getElementById('nilai-ta-sel');
   if (taInput) populateTahunAjaranSelect(taInput, ta);
+
+  // Sesuaikan tampilan form filter sesuai mode aktif (matrix / mapel / absen)
+  const mapelGroup = document.getElementById('nilai-mapel-form-group');
+  if (mapelGroup) mapelGroup.style.display = _nilaiMode === 'mapel' ? 'flex' : 'none';
+  const filterTitle = document.getElementById('nilai-filter-title');
+  if (filterTitle) {
+    filterTitle.textContent = _nilaiMode === 'matrix' 
+      ? 'Filter Kelas (Matriks Semua Mapel)' 
+      : (_nilaiMode === 'mapel' ? 'Filter Mata Pelajaran & Kelas' : 'Filter Kelas (Rekap Kehadiran & Catatan)');
+  }
 
   updateNilaiKelasOptions();
   await populateNilaiMapelOptions(State.filterNilai.mapelId);
@@ -1115,7 +1131,32 @@ async function loadNilaiSiswaList() {
       return;
     }
 
-    if (_nilaiMode === 'mapel') {
+    if (_nilaiMode === 'matrix') {
+      if (!State.mapel || !State.mapel.length) {
+        try {
+          const mapelRes = await DataService.Mapel.getAll();
+          State.mapel = mapelRes.data || [];
+        } catch (err) {
+          console.warn('Gagal load mapel:', err);
+        }
+      }
+      const mapelList = (State.mapel || [])
+        .filter(m => !jenjang || m.jenjang === jenjang)
+        .sort((a, b) => (a.urutan || 0) - (b.urutan || 0));
+
+      let existingNilaiMap = {};
+      try {
+        const nilaiRes = await DataService.Nilai.getByKelas({ jenjang, kelas, semester, tahunAjaran: ta });
+        const allGrades = nilaiRes.data || [];
+        allGrades
+          .filter(n => n.semester === semester && n.tahunAjaran === ta)
+          .forEach(n => { existingNilaiMap[`${n.siswaId}_${n.mapelId}`] = n; });
+      } catch (err) {
+        console.warn('Gagal load nilai dari server:', err);
+      }
+
+      renderNilaiMatriks(mapelList, siswaKelas, existingNilaiMap);
+    } else if (_nilaiMode === 'mapel') {
       const mapel = State.mapel.find(m => m.id === mapelId) || { id: mapelId, nama: 'Mata Pelajaran', kkm: 70 };
 
       let existingNilaiMap = {};
@@ -1506,23 +1547,144 @@ async function saveNilaiAbsen() {
 }
 
 /* ============================================================
- * ─── KEPALA MADRASAH PAGE ──────────────────────────────────
+ * ─── KEPALA MADRASAH PER JENJANG (MI, MTS, MA) ─────────────
  * ============================================================ */
+let _currentKepalaJenjang = 'MI';
+let _kepalaPerJenjang = {
+  MI:  { id: 'kepala_MI',  jenjang: 'MI',  nama: '', nip: '', jabatan: 'Kepala Madrasah Ibtidaiyah',  ttdUrl: '' },
+  MTs: { id: 'kepala_MTs', jenjang: 'MTs', nama: '', nip: '', jabatan: 'Kepala Madrasah Tsanawiyah', ttdUrl: '' },
+  MA:  { id: 'kepala_MA',  jenjang: 'MA',  nama: '', nip: '', jabatan: 'Kepala Madrasah Aliyah',     ttdUrl: '' }
+};
+
+const JENJANG_TITLES = {
+  MI:  { label: 'MI (Madrasah Ibtidaiyah)',  badge: 'Jenjang MI',  bg: '#e0f2fe', color: '#0369a1', defaultJabatan: 'Kepala Madrasah Ibtidaiyah' },
+  MTs: { label: 'MTs (Madrasah Tsanawiyah)', badge: 'Jenjang MTs', bg: '#fef3c7', color: '#92400e', defaultJabatan: 'Kepala Madrasah Tsanawiyah' },
+  MA:  { label: 'MA (Madrasah Aliyah)',      badge: 'Jenjang MA',  bg: '#f3e8ff', color: '#6b21a8', defaultJabatan: 'Kepala Madrasah Aliyah' }
+};
+
+function switchKepalaJenjang(jenjang) {
+  _currentKepalaJenjang = jenjang;
+
+  // Toggle active tab
+  ['MI', 'MTs', 'MA'].forEach(j => {
+    const tab = document.getElementById(`tab-kepala-${j}`);
+    if (tab) tab.classList.toggle('active', j === jenjang);
+  });
+
+  const meta = JENJANG_TITLES[jenjang] || JENJANG_TITLES.MI;
+  const titleEl = document.getElementById('kepala-form-title');
+  if (titleEl) titleEl.textContent = `📋 Data Kepala Madrasah: ${meta.label}`;
+
+  const badgeEl = document.getElementById('kepala-jenjang-badge');
+  if (badgeEl) {
+    badgeEl.textContent = meta.badge;
+    badgeEl.style.background = meta.bg;
+    badgeEl.style.color = meta.color;
+  }
+
+  const btnSave = document.getElementById('btn-save-kepala');
+  if (btnSave) btnSave.textContent = `💾 Simpan Kepala Madrasah ${jenjang}`;
+
+  const ttdLabel = document.getElementById('ttd-jenjang-label');
+  if (ttdLabel) ttdLabel.textContent = jenjang;
+  const ttdDesc = document.getElementById('ttd-jenjang-desc');
+  if (ttdDesc) ttdDesc.textContent = jenjang;
+
+  // Populate form fields
+  const current = _kepalaPerJenjang[jenjang] || {};
+  const f = document.getElementById('form-kepala');
+  if (f) {
+    f['kepala-nama'].value    = current.nama || '';
+    f['kepala-nip'].value     = current.nip || '';
+    f['kepala-jabatan'].value = current.jabatan || meta.defaultJabatan;
+  }
+
+  // Update TTD preview
+  renderTtdPreview(current.ttdUrl);
+}
+
+function renderTtdPreview(ttdUrl) {
+  const preview = document.getElementById('kepala-ttd-preview');
+  const btnHapus = document.getElementById('btn-hapus-ttd');
+  if (!preview) return;
+
+  if (ttdUrl) {
+    preview.innerHTML = `<img src="${escHtml(ttdUrl)}" alt="TTD" class="sig-image-preview" style="max-width:200px;max-height:120px;object-fit:contain" />`;
+    if (btnHapus) btnHapus.style.display = 'inline-flex';
+  } else {
+    preview.innerHTML = `<span style="font-size:2rem">✍️</span><p>Belum ada tanda tangan</p><p style="font-size:0.75rem;color:var(--gray-400)">Upload gambar tanda tangan di bawah</p>`;
+    if (btnHapus) btnHapus.style.display = 'none';
+  }
+}
+
+function hapusTtdKepala() {
+  if (!_kepalaPerJenjang[_currentKepalaJenjang]) {
+    _kepalaPerJenjang[_currentKepalaJenjang] = { id: 'kepala_' + _currentKepalaJenjang, jenjang: _currentKepalaJenjang };
+  }
+  _kepalaPerJenjang[_currentKepalaJenjang].ttdUrl = '';
+  renderTtdPreview('');
+  Toast.info(`Tanda tangan Kepala Madrasah ${_currentKepalaJenjang} dihapus. Klik Simpan untuk memperbarui.`);
+}
+
+function renderRingkasanKepalaTable() {
+  const tbody = document.getElementById('tbody-ringkasan-kepala');
+  if (!tbody) return;
+
+  const jenjangList = ['MI', 'MTs', 'MA'];
+  tbody.innerHTML = jenjangList.map(j => {
+    const meta = JENJANG_TITLES[j];
+    const data = _kepalaPerJenjang[j] || {};
+    const hasName = Boolean(data.nama && data.nama.trim());
+    const hasTtd  = Boolean(data.ttdUrl);
+
+    return `
+      <tr>
+        <td>
+          <span class="badge" style="background:${meta.bg};color:${meta.color};font-weight:700">${j}</span>
+        </td>
+        <td>
+          <strong>${escHtml(data.nama || '(Belum diatur)')}</strong>
+          ${!hasName ? '<span style="color:#ef4444;font-size:0.75rem;margin-left:6px">⚠️ Belum diisi</span>' : ''}
+        </td>
+        <td>${escHtml(data.nip || '-')}</td>
+        <td>${escHtml(data.jabatan || meta.defaultJabatan)}</td>
+        <td style="text-align:center">
+          ${hasTtd 
+            ? `<span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700">✓ Ada TTD</span>` 
+            : `<span class="badge" style="background:#f1f5f9;color:#64748b">- Belum Ada</span>`}
+        </td>
+        <td style="text-align:center">
+          <button type="button" class="btn btn-sm btn-outline" onclick="switchKepalaJenjang('${j}')">
+            ✏️ Edit ${j}
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
 async function renderKepala() {
   try {
     const res = await DataService.Kepala.get();
-    State.kepala = res.data || {};
+    const rawList = res.list || (Array.isArray(res.data) ? res.data : (res.data ? [res.data] : []));
 
-    const f = document.getElementById('form-kepala');
-    f['kepala-nama'].value   = State.kepala.nama   || '';
-    f['kepala-nip'].value    = State.kepala.nip    || '';
-    f['kepala-jabatan'].value = State.kepala.jabatan || 'Kepala Madrasah';
+    // Map list to jenjang keys
+    rawList.forEach(k => {
+      const j = String(k.jenjang || '').toUpperCase();
+      if (['MI', 'MTs', 'MA'].includes(j)) {
+        _kepalaPerJenjang[j] = { ..._kepalaPerJenjang[j], ...k, jenjang: j };
+      } else if (!k.jenjang && k.id === 'kepala_1') {
+        // Fallback for single old record -> assign to MI
+        _kepalaPerJenjang.MI = { ..._kepalaPerJenjang.MI, ...k, jenjang: 'MI', id: 'kepala_MI' };
+      }
+    });
 
-    // Signature preview
-    if (State.kepala.ttdUrl) {
-      document.getElementById('kepala-ttd-preview').innerHTML =
-        `<img src="${escHtml(State.kepala.ttdUrl)}" alt="TTD" class="sig-image-preview" style="max-width:200px;max-height:120px" />`;
-    }
+    // Also populate State.kepalaList & State.kepala
+    State.kepalaList = Object.values(_kepalaPerJenjang);
+    State.kepala = _kepalaPerJenjang[_currentKepalaJenjang] || _kepalaPerJenjang.MI;
+
+    switchKepalaJenjang(_currentKepalaJenjang);
+    renderRingkasanKepalaTable();
   } catch (e) {
     Toast.error('Gagal memuat data kepala madrasah: ' + e.message);
   }
@@ -1531,27 +1693,35 @@ async function renderKepala() {
 async function saveKepala(e) {
   e.preventDefault();
   const f = document.getElementById('form-kepala');
+  const jenjang = _currentKepalaJenjang;
+  const meta = JENJANG_TITLES[jenjang] || JENJANG_TITLES.MI;
 
   const data = {
+    id:      'kepala_' + jenjang,
+    jenjang: jenjang,
     nama:    f['kepala-nama'].value.trim(),
     nip:     f['kepala-nip'].value.trim(),
-    jabatan: f['kepala-jabatan'].value.trim() || 'Kepala Madrasah',
-    ttdUrl:  State.kepala?.ttdUrl || '',
+    jabatan: f['kepala-jabatan'].value.trim() || meta.defaultJabatan,
+    ttdUrl:  _kepalaPerJenjang[jenjang]?.ttdUrl || '',
   };
 
-  if (!data.nama) return Toast.warning('Nama Kepala Madrasah tidak boleh kosong');
+  if (!data.nama) return Toast.warning(`Nama Kepala Madrasah ${jenjang} tidak boleh kosong`);
 
-  const btn = f.querySelector('button[type="submit"]');
-  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
+  const btn = document.getElementById('btn-save-kepala');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menyimpan...'; }
 
   try {
     await DataService.Kepala.save(data);
+    _kepalaPerJenjang[jenjang] = data;
     State.kepala = data;
-    Toast.success('Data Kepala Madrasah berhasil disimpan');
+    State.kepalaList = Object.values(_kepalaPerJenjang);
+
+    renderRingkasanKepalaTable();
+    Toast.success(`✅ Data Kepala Madrasah ${jenjang} (${data.nama}) berhasil disimpan!`);
   } catch (err) {
     Toast.error('Gagal menyimpan: ' + err.message);
   } finally {
-    btn.disabled = false; btn.innerHTML = '💾 Simpan Data';
+    if (btn) { btn.disabled = false; btn.innerHTML = `💾 Simpan Kepala Madrasah ${jenjang}`; }
   }
 }
 
@@ -1564,12 +1734,12 @@ function handleTtdUpload(input) {
   const reader = new FileReader();
   reader.onload = e => {
     const dataUrl = e.target.result;
-    if (!State.kepala) State.kepala = {};
-    State.kepala.ttdUrl = dataUrl;
-
-    document.getElementById('kepala-ttd-preview').innerHTML =
-      `<img src="${escHtml(dataUrl)}" alt="TTD" style="max-width:200px;max-height:120px;object-fit:contain" />`;
-    Toast.info('Tanda tangan berhasil diunggah. Simpan data untuk menyimpan perubahan.');
+    if (!_kepalaPerJenjang[_currentKepalaJenjang]) {
+      _kepalaPerJenjang[_currentKepalaJenjang] = { id: 'kepala_' + _currentKepalaJenjang, jenjang: _currentKepalaJenjang };
+    }
+    _kepalaPerJenjang[_currentKepalaJenjang].ttdUrl = dataUrl;
+    renderTtdPreview(dataUrl);
+    Toast.info(`Tanda tangan untuk Kepala Madrasah ${_currentKepalaJenjang} berhasil dimuat. Klik "Simpan Kepala Madrasah ${_currentKepalaJenjang}" untuk menyimpan perubahan.`);
   };
   reader.readAsDataURL(file);
 }
@@ -1699,16 +1869,30 @@ async function generateRaportPreview() {
     const absenKey = `absen_${siswaId}_${semester}_${ta}`;
     const absen = JSON.parse(localStorage.getItem(absenKey) || '{}');
 
-    // Load kepala
-    if (!State.kepala) {
+    // Load kepala per jenjang (MI, MTs, MA)
+    if (!State.kepalaList || !State.kepalaList.length) {
       try {
         const kepRes = await DataService.Kepala.get();
-        State.kepala = kepRes.data || {};
+        const rawList = kepRes.list || (Array.isArray(kepRes.data) ? kepRes.data : (kepRes.data ? [kepRes.data] : []));
+        rawList.forEach(k => {
+          const j = String(k.jenjang || '').toUpperCase();
+          if (['MI', 'MTs', 'MA'].includes(j)) {
+            _kepalaPerJenjang[j] = { ..._kepalaPerJenjang[j], ...k, jenjang: j };
+          }
+        });
+        State.kepalaList = Object.values(_kepalaPerJenjang);
       } catch {}
     }
 
-    // Generate raport HTML
-    const html = buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, State.kepala);
+    // Ambil Kepala Madrasah sesuai jenjang siswa (MI, MTs, atau MA)
+    const siswaJenjang = String(siswa.jenjang || 'MI').toUpperCase();
+    const kepalaJenjang = _kepalaPerJenjang[siswaJenjang] || 
+      (State.kepalaList && State.kepalaList.find(k => String(k.jenjang || '').toUpperCase() === siswaJenjang)) || 
+      State.kepala || 
+      {};
+
+    // Generate raport HTML dengan Kepala Madrasah spesifik jenjang siswa
+    const html = buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepalaJenjang);
     previewArea.innerHTML = html;
 
   } catch (e) {
@@ -1760,19 +1944,34 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
     `;
   }).join('');
 
-  // Kepala info
+  // Kepala info (SEBELAH KIRI - Mengetahui, TANPA TANGGAL)
+  const kepalaJabatan = escHtml(kepala?.jabatan || 'Kepala Madrasah');
+  const kepalaNama = escHtml(kepala?.nama || '.........................');
+  const kepalaNip = escHtml(kepala?.nip || '-');
   const kepalaHtml = kepala?.ttdUrl
     ? `<div class="sig-block has-signature">
-        <div class="sig-title">${lokasiTanggal}<br>${escHtml(kepala.jabatan || 'Kepala Madrasah')}</div>
+        <div class="sig-title">Mengetahui,<br>${kepalaJabatan}</div>
         <img src="${escHtml(kepala.ttdUrl)}" class="sig-image" alt="TTD Kepala" />
-        <div class="sig-name">${escHtml(kepala.nama || '')}</div>
-        <div class="sig-nip">NIP. ${escHtml(kepala.nip || '-')}</div>
+        <div class="sig-name">${kepalaNama}</div>
+        <div class="sig-nip">NIP. ${kepalaNip}</div>
       </div>`
     : `<div class="sig-block">
-        <div class="sig-title">${lokasiTanggal}<br>${escHtml(kepala?.jabatan || 'Kepala Madrasah')}</div>
-        <div class="sig-name">${escHtml(kepala?.nama || '.........................')}</div>
-        <div class="sig-nip">NIP. ${escHtml(kepala?.nip || '-')}</div>
+        <div class="sig-title">Mengetahui,<br>${kepalaJabatan}</div>
+        <div class="sig-name">${kepalaNama}</div>
+        <div class="sig-nip">NIP. ${kepalaNip}</div>
       </div>`;
+
+  // Wali Kelas info (SEBELAH KANAN - LENGKAP DENGAN TANGGAL)
+  const matchedGuru = (State.guru || []).find(g => 
+    g.nama && siswa.waliKelas && g.nama.trim().toLowerCase() === siswa.waliKelas.trim().toLowerCase()
+  );
+  const waliNama = escHtml(siswa.waliKelas || '.........................');
+  const waliNip = escHtml(matchedGuru?.nip || '-');
+  const waliHtml = `<div class="sig-block">
+      <div class="sig-title">${lokasiTanggal}<br>Wali Kelas ${kelasLabel}</div>
+      <div class="sig-name">${waliNama}</div>
+      <div class="sig-nip">NIP. ${waliNip}</div>
+    </div>`;
 
   const kelasLabel = `${escHtml(siswa.kelas || '')}${siswa.rombel ? ' - ' + escHtml(siswa.rombel) : ''}`;
 
@@ -1801,6 +2000,7 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
       <div class="student-identity">
         <h3>📋 Identitas Peserta Didik</h3>
         <div class="identity-grid">
+          <!-- Baris 1: Nama Lengkap & Kelas/Rombel -->
           <div class="identity-row">
             <span class="identity-label">Nama Lengkap</span>
             <span class="identity-colon">:</span>
@@ -1811,35 +2011,29 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
             <span class="identity-colon">:</span>
             <span class="identity-value">${kelasLabel}</span>
           </div>
+
+          <!-- Baris 2: NISN & Jenjang (tanpa (MI)) -->
           <div class="identity-row">
-            <span class="identity-label">NIS</span>
+            <span class="identity-label">NISN</span>
             <span class="identity-colon">:</span>
-            <span class="identity-value">${escHtml(siswa.nis)}</span>
+            <span class="identity-value">${escHtml(siswa.nisn || siswa.NISN || '-')}</span>
           </div>
           <div class="identity-row">
             <span class="identity-label">Jenjang</span>
             <span class="identity-colon">:</span>
             <span class="identity-value">${escHtml(jenjangLabel)}</span>
           </div>
+
+          <!-- Baris 3: NIS & Tempat/Tgl Lahir -->
+          <div class="identity-row">
+            <span class="identity-label">NIS</span>
+            <span class="identity-colon">:</span>
+            <span class="identity-value">${escHtml(siswa.nis || siswa.NIS || '-')}</span>
+          </div>
           <div class="identity-row">
             <span class="identity-label">Tempat/Tgl Lahir</span>
             <span class="identity-colon">:</span>
             <span class="identity-value">${escHtml(siswa.tempatLahir || '-')} / ${escHtml(formatDate(siswa.tanggalLahir) || '-')}</span>
-          </div>
-          <div class="identity-row">
-            <span class="identity-label">Wali Kelas</span>
-            <span class="identity-colon">:</span>
-            <span class="identity-value">${escHtml(siswa.waliKelas || '-')}</span>
-          </div>
-          <div class="identity-row">
-            <span class="identity-label">Nama Orang Tua/Wali</span>
-            <span class="identity-colon">:</span>
-            <span class="identity-value">${escHtml(siswa.namaWali || '-')}</span>
-          </div>
-          <div class="identity-row">
-            <span class="identity-label">Alamat</span>
-            <span class="identity-colon">:</span>
-            <span class="identity-value">${escHtml(siswa.alamat || '-')}</span>
           </div>
         </div>
       </div>
@@ -1902,23 +2096,15 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
         <div class="notes-content">${escHtml(absen.catatan || 'Anak ini menunjukkan perkembangan yang baik selama semester ini.')}</div>
       </div>
 
-      <!-- ── Signatures ── -->
+      <!-- ── Signatures: Sebelah Kiri Mengetahui Kepala Madrasah (Tanpa Tanggal) | Tengah Stempel | Sebelah Kanan Wali Kelas (Lengkap Tanggal) ── -->
       <div class="signature-section">
-        <!-- Wali Kelas -->
-        <div class="sig-block">
-          <div class="sig-title">${lokasiTanggal}<br>Wali Kelas ${kelasLabel}</div>
-          <div class="sig-name">${escHtml(siswa.waliKelas || '.........................')}</div>
-          <div class="sig-nip">NIP. -</div>
-        </div>
-
-        <!-- Stempel -->
-        <div style="text-align:center;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px">
-          <div class="stamp-circle">STEMPEL<br>MADRASAH</div>
-          <div style="font-size:7.5pt;color:#aaa;margin-top:4px">Cap Madrasah</div>
-        </div>
-
-        <!-- Kepala Madrasah -->
+        <!-- 1. Sebelah Kiri: Mengetahui Kepala Madrasah (Tanpa Tanggal) -->
         ${kepalaHtml}
+
+
+
+        <!-- 3. Sebelah Kanan: Wali Kelas Lengkap dengan Tanggal -->
+        ${waliHtml}
       </div>
 
       <!-- ── Footer ── -->
@@ -3207,9 +3393,21 @@ function initApp() {
   const backdrop       = document.querySelector('.sidebar-backdrop');
 
   sidebarToggle?.addEventListener('click', () => {
-    sidebar.classList.toggle('open');
-    backdrop.classList.toggle('show');
+    if (window.innerWidth < 900) {
+      sidebar.classList.toggle('open');
+      backdrop?.classList.toggle('show');
+    } else {
+      document.body.classList.toggle('sidebar-collapsed');
+      const isCollapsed = document.body.classList.contains('sidebar-collapsed');
+      localStorage.setItem('sidebar_collapsed', isCollapsed ? '1' : '0');
+      setTimeout(() => { if (typeof initExcelScrollbar === 'function') initExcelScrollbar(); }, 260);
+    }
   });
+
+  // Restore saved collapse state on desktop
+  if (localStorage.getItem('sidebar_collapsed') === '1' && window.innerWidth >= 900) {
+    document.body.classList.add('sidebar-collapsed');
+  }
 
   backdrop?.addEventListener('click', () => {
     sidebar.classList.remove('open');
@@ -3282,3 +3480,447 @@ function initApp() {
 
 // Boot
 document.addEventListener('DOMContentLoaded', initApp);
+
+
+/**
+ * ─── MATRIKS NILAI LENGKAP (ALL SUBJECTS GRID) ───────────────
+ * Header: Seluruh Nama Mapel
+ * Baris Kiri: Seluruh Nama Siswa
+ * Input sekaligus, jika kosong tersimpan 0, dan bisa diedit kapan saja.
+ */
+function renderNilaiMatriks(mapelList, siswaList, existingMap) {
+  const container = document.getElementById('nilai-siswa-list');
+  const { kelas, rombel, semester, tahunAjaran } = State.filterNilai;
+  const rombelLabel = rombel ? ` Rombel ${rombel}` : '';
+
+  _currentMatrixSiswaList = siswaList;
+  _currentMatrixMapelList = mapelList;
+  _currentMatrixMap = {};
+
+  // Inisialisasi nilai dari database
+  siswaList.forEach(s => {
+    mapelList.forEach(m => {
+      const key = `${s.id}_${m.id}`;
+      const existing = existingMap[key];
+      _currentMatrixMap[key] = (existing && existing.nilai !== '' && existing.nilai !== undefined) ? existing.nilai : '';
+    });
+  });
+
+  const totalMapel = mapelList.length;
+  const totalSiswa = siswaList.length;
+
+  container.innerHTML = `
+    <!-- Header banner -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg, var(--green-dark), #16445f);color:#fff;border-radius:var(--radius) var(--radius) 0 0;flex-wrap:wrap;gap:12px">
+      <div>
+        <h3 style="font-size:1.15rem;margin:0;font-weight:700">📊 Matriks Nilai Seluruh Mata Pelajaran</h3>
+        <div style="font-size:0.82rem;color:rgba(255,255,255,0.85);margin-top:3px">
+          Kelas <strong>${escHtml(kelas)}${escHtml(rombelLabel)}</strong> &bull; Semester <strong>${escHtml(semester)}</strong> &bull; TA <strong>${escHtml(tahunAjaran)}</strong> &bull; <strong>${totalSiswa} Siswa</strong> &bull; <strong>${totalMapel} Mapel</strong>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn btn-gold btn-sm" id="btn-save-matrix-top" onclick="saveNilaiMatriks()" style="font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.2);">
+          💾 Simpan Seluruh Nilai
+        </button>
+      </div>
+    </div>
+
+    <!-- Info instruction -->
+    <div style="padding:10px 16px;background:#f0fdf4;border-bottom:1px solid #bbf7d0;font-size:0.82rem;color:#166534;display:flex;align-items:center;gap:8px;">
+      <span style="font-size:1.1rem;">💡</span>
+      <span>Ketik nilai siswa pada masing-masing kolom mapel. <strong>Jika nilai dikosongkan, otomatis tersimpan 0.</strong> Nilai dapat diedit kembali kapan saja lalu klik simpan lagi. Gunakan tombol panah keyboard (↑ ↓ ← →) atau Enter untuk berpindah sel cepat.</span>
+    </div>
+
+    <!-- Matrix Table Wrap -->
+    <div class="nilai-table-wrap" id="matrix-table-wrap" style="overflow-x:auto;max-height:72vh;position:relative;scroll-behavior:smooth;">
+      <table class="nilai-table" id="table-matrix-nilai" style="border-collapse:separate;border-spacing:0;font-size:0.88rem;width:100%;">
+        <thead>
+          <tr style="position:sticky;top:0;z-index:10;background:#16445f;color:#fff;">
+            <th style="width:40px;text-align:center;position:sticky;left:0;z-index:12;background:#16445f;border-right:1px solid rgba(255,255,255,0.15);">No</th>
+            <th style="width:85px;text-align:center;position:sticky;left:40px;z-index:12;background:#16445f;border-right:1px solid rgba(255,255,255,0.15);">NIS</th>
+            <th style="min-width:210px;text-align:left;position:sticky;left:125px;z-index:12;background:#16445f;box-shadow:2px 0 5px rgba(0,0,0,0.2);border-right:2px solid #cbd5e1;">Nama Siswa</th>
+            ${mapelList.map((m, colIdx) => `
+              <th style="min-width:110px;text-align:center;padding:10px 6px;vertical-align:middle;border-right:1px solid rgba(255,255,255,0.15);" title="KKM: ${m.kkm ?? 70}">
+                <div style="font-weight:700;line-height:1.2;">${escHtml(m.nama)}</div>
+                <div style="font-size:0.75rem;font-weight:600;opacity:0.85;margin-top:2px;">(KKM: ${m.kkm ?? 70})</div>
+              </th>
+            `).join('')}
+            <th style="width:75px;text-align:center;background:#0d2d3f;border-left:2px solid #e2e8f0;">Total</th>
+            <th style="width:75px;text-align:center;background:#0d2d3f;">Rata²</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${siswaList.map((s, rowIdx) => {
+            let rowTotal = 0;
+            let rowCount = 0;
+            mapelList.forEach(m => {
+              const v = _currentMatrixMap[`${s.id}_${m.id}`];
+              if (v !== '' && v !== undefined && !isNaN(parseFloat(v))) {
+                rowTotal += parseFloat(v);
+                rowCount++;
+              }
+            });
+            const rowAvg = totalMapel > 0 ? (rowTotal / totalMapel).toFixed(1) : '-';
+
+            return `
+              <tr data-siswa-id="${escHtml(s.id)}" style="background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                <td style="text-align:center;position:sticky;left:0;z-index:5;background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">${rowIdx + 1}</td>
+                <td style="text-align:center;position:sticky;left:40px;z-index:5;background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">${escHtml(s.nis || '-')}</td>
+                <td style="position:sticky;left:125px;z-index:5;background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};font-weight:700;color:#0f172a;white-space:nowrap;border-bottom:1px solid #e2e8f0;box-shadow:2px 0 5px rgba(0,0,0,0.08);border-right:2px solid #cbd5e1;">
+                  ${escHtml(s.nama)}
+                </td>
+                ${mapelList.map((m, colIdx) => {
+                  const key = `${s.id}_${m.id}`;
+                  const val = _currentMatrixMap[key];
+                  const kkm = m.kkm ?? 70;
+                  const isBelow = val !== '' && !isNaN(parseFloat(val)) && parseFloat(val) < kkm;
+                  return `
+                    <td style="text-align:center;padding:4px 6px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;background:${isBelow ? '#fff1f2' : ''};">
+                      <input type="number" min="0" max="100" step="0.5"
+                        class="matrix-nilai-input"
+                        id="mat_${escHtml(s.id)}_${escHtml(m.id)}"
+                        data-row="${rowIdx}"
+                        data-col="${colIdx}"
+                        data-siswa-id="${escHtml(s.id)}"
+                        data-mapel-id="${escHtml(m.id)}"
+                        value="${val !== undefined && val !== '' ? val : ''}"
+                        placeholder="0"
+                        oninput="onMatrixInput('${escHtml(s.id)}', '${escHtml(m.id)}', this.value, ${kkm})"
+                        onkeydown="onMatrixKeyDown(event, ${rowIdx}, ${colIdx})"
+                        style="width:72px;text-align:center;font-weight:700;font-size:0.95rem;padding:5px 2px;border:1.5px solid ${isBelow ? '#fda4af' : '#cbd5e1'};border-radius:6px;background:#ffffff;color:${isBelow ? '#be123c' : '#0f172a'};"
+                      />
+                    </td>
+                  `;
+                }).join('')}
+                <td id="mat_total_${escHtml(s.id)}" style="text-align:center;font-weight:800;color:#1e293b;border-left:2px solid #cbd5e1;border-bottom:1px solid #e2e8f0;background:#f1f5f9;">
+                  ${rowTotal > 0 ? rowTotal.toFixed(0) : '-'}
+                </td>
+                <td id="mat_avg_${escHtml(s.id)}" style="text-align:center;font-weight:800;color:#059669;border-bottom:1px solid #e2e8f0;background:#f1f5f9;">
+                  ${rowAvg}
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Excel-Style Bottom Scrollbar Bar -->
+    <div class="excel-scrollbar-bar" id="excel-h-scrollbar">
+      <button type="button" class="excel-scroll-btn" id="excel-scroll-left" title="Geser ke kiri (◀)">
+        ◀
+      </button>
+      <div class="excel-scroll-track" id="excel-scroll-track" title="Bilah geser horizontal (seperti Microsoft Excel)">
+        <div class="excel-scroll-thumb" id="excel-scroll-thumb" title="Tarik tombol geser ini untuk melihat mata pelajaran lain"></div>
+      </div>
+      <button type="button" class="excel-scroll-btn" id="excel-scroll-right" title="Geser ke kanan (▶)">
+        ▶
+      </button>
+    </div>
+
+    <!-- Big Save Bottom Bar -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#f8fafc;border-top:1px solid #e2e8f0;border-radius:0 0 var(--radius) var(--radius);flex-wrap:wrap;gap:12px;">
+      <div style="font-size:0.85rem;color:#64748b;">
+        Total <strong>${totalSiswa} Siswa</strong> &bull; Seluruh nilai kosong otomatis tersimpan sebagai <strong>0</strong>.
+      </div>
+      <button class="btn btn-primary btn-md" id="btn-save-matrix-bottom" onclick="saveNilaiMatriks()" style="font-weight:700;padding:8px 24px;font-size:0.95rem;box-shadow:0 2px 8px rgba(0,0,0,0.15);">
+        💾 Simpan Seluruh Nilai Sekaligus
+      </button>
+    </div>
+  `;
+
+  // Inisialisasi bilah geser gaya Excel
+  initExcelScrollbar();
+}
+
+function onMatrixInput(siswaId, mapelId, val, kkm) {
+  _currentMatrixMap[`${siswaId}_${mapelId}`] = val;
+
+  // Recalculate row total & avg
+  let total = 0;
+  let count = 0;
+  _currentMatrixMapelList.forEach(m => {
+    const v = _currentMatrixMap[`${siswaId}_${m.id}`];
+    if (v !== '' && v !== undefined && !isNaN(parseFloat(v))) {
+      total += parseFloat(v);
+      count++;
+    }
+  });
+
+  const totalEl = document.getElementById(`mat_total_${siswaId}`);
+  const avgEl = document.getElementById(`mat_avg_${siswaId}`);
+  if (totalEl) totalEl.textContent = total > 0 ? total.toFixed(0) : '-';
+  if (avgEl) avgEl.textContent = _currentMatrixMapelList.length > 0 ? (total / _currentMatrixMapelList.length).toFixed(1) : '-';
+
+  // Highlight border if below KKM
+  const inputEl = document.getElementById(`mat_${siswaId}_${mapelId}`);
+  if (inputEl) {
+    const isBelow = val !== '' && !isNaN(parseFloat(val)) && parseFloat(val) < (kkm || 70);
+    inputEl.style.borderColor = isBelow ? '#fda4af' : '#cbd5e1';
+    inputEl.style.color = isBelow ? '#be123c' : '#0f172a';
+    if (inputEl.parentElement) {
+      inputEl.parentElement.style.background = isBelow ? '#fff1f2' : '';
+    }
+  }
+}
+
+function onMatrixKeyDown(e, rowIdx, colIdx) {
+  let targetRow = rowIdx;
+  let targetCol = colIdx;
+
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    targetRow = Math.max(0, rowIdx - 1);
+  } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
+    e.preventDefault();
+    targetRow = Math.min(_currentMatrixSiswaList.length - 1, rowIdx + 1);
+  } else if (e.key === 'ArrowLeft') {
+    if (e.target.selectionStart === 0) {
+      e.preventDefault();
+      targetCol = Math.max(0, colIdx - 1);
+    }
+  } else if (e.key === 'ArrowRight') {
+    if (e.target.selectionStart === e.target.value.length) {
+      e.preventDefault();
+      targetCol = Math.min(_currentMatrixMapelList.length - 1, colIdx + 1);
+    }
+  }
+
+  if (targetRow !== rowIdx || targetCol !== colIdx) {
+    const nextSiswa = _currentMatrixSiswaList[targetRow];
+    const nextMapel = _currentMatrixMapelList[targetCol];
+    if (nextSiswa && nextMapel) {
+      const nextInput = document.getElementById(`mat_${nextSiswa.id}_${nextMapel.id}`);
+      if (nextInput) {
+        nextInput.focus();
+        nextInput.select();
+      }
+    }
+  }
+}
+
+async function saveNilaiMatriks() {
+  const jenjang  = State.filterNilai.jenjang || 'MI';
+  const kelas    = State.filterNilai.kelas;
+  const semester = State.filterNilai.semester || 'Ganjil';
+  const ta       = State.filterNilai.tahunAjaran || State.settings.tahunAjaran || currentTahunAjaran();
+  const cleanTa  = ta.replace(/\//g, '-');
+
+  const mapelList = _currentMatrixMapelList;
+  const siswaList = _currentMatrixSiswaList;
+
+  if (!siswaList.length || !mapelList.length) {
+    return Toast.warning('Data siswa atau mata pelajaran tidak tersedia untuk disimpan');
+  }
+
+  const records = [];
+  siswaList.forEach(s => {
+    mapelList.forEach(m => {
+      const key = `${s.id}_${m.id}`;
+      const rawVal = _currentMatrixMap[key];
+      // Aturan User: "jika nilai kosong maka tersimpan 0"
+      const numVal = (rawVal === '' || rawVal === undefined || isNaN(parseFloat(rawVal))) ? 0 : parseFloat(rawVal);
+      _currentMatrixMap[key] = numVal;
+
+      records.push({
+        id: `nil_${s.id}_${m.id}_${semester}_${cleanTa}`,
+        siswaId: s.id,
+        mapelId: m.id,
+        mapelNama: m.nama,
+        guru: '',
+        nilai: numVal,
+        jenjang: jenjang,
+        kelas: kelas,
+        semester: semester,
+        tahunAjaran: ta
+      });
+    });
+  });
+
+  const btnTop = document.getElementById('btn-save-matrix-top');
+  const btnBottom = document.getElementById('btn-save-matrix-bottom');
+  if (btnTop) { btnTop.disabled = true; btnTop.innerHTML = '<span class="spinner"></span> Menyimpan...'; }
+  if (btnBottom) { btnBottom.disabled = true; btnBottom.innerHTML = '<span class="spinner"></span> Menyimpan...'; }
+
+  try {
+    if (records.length > 0) {
+      await DataService.Nilai.saveMany(records);
+    }
+    Toast.success(`✅ Berhasil menyimpan seluruh nilai (${records.length} data nilai tersimpan)!`);
+
+    // Perbarui tampilan input jika sebelumnya kosong menjadi '0'
+    siswaList.forEach(s => {
+      mapelList.forEach(m => {
+        const inp = document.getElementById(`mat_${s.id}_${m.id}`);
+        if (inp && (inp.value === '' || inp.value === undefined)) {
+          inp.value = '0';
+        }
+      });
+    });
+  } catch (err) {
+    Toast.error('Gagal menyimpan nilai: ' + err.message);
+  } finally {
+    if (btnTop) { btnTop.disabled = false; btnTop.innerHTML = '💾 Simpan Seluruh Nilai'; }
+    if (btnBottom) { btnBottom.disabled = false; btnBottom.innerHTML = '💾 Simpan Seluruh Nilai Sekaligus'; }
+  }
+}
+
+/**
+ * Geser horizontal tabel matriks nilai (ke kanan / ke kiri)
+ */
+function scrollMatrixTable(delta) {
+  const wrap = document.getElementById('matrix-table-wrap') || document.querySelector('.nilai-table-wrap');
+  if (wrap) {
+    wrap.scrollBy({ left: delta, behavior: 'smooth' });
+  }
+}
+
+
+/**
+ * Inisialisasi Tombol Geser Horizontal & Bar Scroll Gaya Excel
+ * Mendukung drag thumb geser, klik stepper ◀ ▶, klik track lompat halaman,
+ * dan sinkronisasi otomatis dua arah saat tabel digeser.
+ */
+function initExcelScrollbar() {
+  const wrap = document.getElementById('matrix-table-wrap');
+  const track = document.getElementById('excel-scroll-track');
+  const thumb = document.getElementById('excel-scroll-thumb');
+  const btnLeft = document.getElementById('excel-scroll-left');
+  const btnRight = document.getElementById('excel-scroll-right');
+
+  if (!wrap || !track || !thumb) return;
+
+  function updateThumb() {
+    const scrollWidth = wrap.scrollWidth;
+    const clientWidth = wrap.clientWidth;
+    const maxScroll = scrollWidth - clientWidth;
+
+    if (maxScroll <= 0) {
+      thumb.style.width = '100%';
+      thumb.style.transform = 'translateX(0px)';
+      return;
+    }
+
+    const trackWidth = track.clientWidth;
+    const thumbWidth = Math.max(50, (clientWidth / scrollWidth) * trackWidth);
+    const availableTrack = trackWidth - thumbWidth;
+    const thumbLeft = (wrap.scrollLeft / maxScroll) * availableTrack;
+
+    thumb.style.width = `${thumbWidth}px`;
+    thumb.style.transform = `translateX(${thumbLeft}px)`;
+  }
+
+  // Update on scroll & resize
+  wrap.removeEventListener('scroll', wrap._excelScrollHandler);
+  wrap._excelScrollHandler = updateThumb;
+  wrap.addEventListener('scroll', updateThumb, { passive: true });
+
+  window.removeEventListener('resize', wrap._excelResizeHandler);
+  wrap._excelResizeHandler = updateThumb;
+  window.addEventListener('resize', updateThumb);
+
+  // Initial update
+  requestAnimationFrame(updateThumb);
+  setTimeout(updateThumb, 80);
+  setTimeout(updateThumb, 300);
+
+  // Drag thumb
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartScrollLeft = 0;
+
+  function onPointerDown(e) {
+    isDragging = true;
+    dragStartX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+    dragStartScrollLeft = wrap.scrollLeft;
+    thumb.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+
+    document.addEventListener('mousemove', onPointerMove);
+    document.addEventListener('mouseup', onPointerUp);
+    document.addEventListener('touchmove', onPointerMove, { passive: false });
+    document.addEventListener('touchend', onPointerUp);
+    e.stopPropagation();
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+    const deltaX = clientX - dragStartX;
+
+    const scrollWidth = wrap.scrollWidth;
+    const clientWidth = wrap.clientWidth;
+    const maxScroll = scrollWidth - clientWidth;
+    const trackWidth = track.clientWidth;
+    const thumbWidth = thumb.offsetWidth;
+    const availableTrack = trackWidth - thumbWidth;
+
+    if (availableTrack > 0 && maxScroll > 0) {
+      const scrollRatio = deltaX / availableTrack;
+      wrap.scrollLeft = dragStartScrollLeft + (scrollRatio * maxScroll);
+    }
+    if (e.cancelable && e.type === 'touchmove') e.preventDefault();
+  }
+
+  function onPointerUp() {
+    if (!isDragging) return;
+    isDragging = false;
+    thumb.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', onPointerMove);
+    document.removeEventListener('mouseup', onPointerUp);
+    document.removeEventListener('touchmove', onPointerMove);
+    document.removeEventListener('touchend', onPointerUp);
+  }
+
+  thumb.onmousedown = onPointerDown;
+  thumb.ontouchstart = onPointerDown;
+
+  // Track click (jump page)
+  track.onclick = (e) => {
+    if (e.target === thumb) return;
+    const rect = track.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const thumbRect = thumb.getBoundingClientRect();
+    const thumbLeft = thumbRect.left - rect.left;
+    const thumbRight = thumbRect.right - rect.left;
+
+    if (clickX < thumbLeft) {
+      wrap.scrollBy({ left: -wrap.clientWidth * 0.75, behavior: 'smooth' });
+    } else if (clickX > thumbRight) {
+      wrap.scrollBy({ left: wrap.clientWidth * 0.75, behavior: 'smooth' });
+    }
+  };
+
+  // Button continuous scroll on hold
+  function setupScrollButton(btn, delta) {
+    if (!btn) return;
+    let timer = null;
+    let stepTimer = null;
+
+    function startScroll(e) {
+      wrap.scrollBy({ left: delta, behavior: 'smooth' });
+      timer = setTimeout(() => {
+        stepTimer = setInterval(() => {
+          wrap.scrollBy({ left: delta * 0.7, behavior: 'auto' });
+        }, 60);
+      }, 300);
+      if (e.cancelable && e.type === 'touchstart') e.preventDefault();
+    }
+
+    function stopScroll() {
+      clearTimeout(timer);
+      clearInterval(stepTimer);
+    }
+
+    btn.onmousedown = startScroll;
+    btn.onmouseup = stopScroll;
+    btn.onmouseleave = stopScroll;
+    btn.ontouchstart = startScroll;
+    btn.ontouchend = stopScroll;
+    btn.ontouchcancel = stopScroll;
+  }
+
+  setupScrollButton(btnLeft, -140);
+  setupScrollButton(btnRight, 140);
+}

@@ -151,11 +151,15 @@ const s103Nilai = DataStore.getNilaiGrid('5', 'A', 'm-1').find(x => x.siswa.id =
 assert(savedEmptyCount === 2 && s103Nilai && s103Nilai.nilai === 0, 'F03-H5', 'Nilai kosong pada matriks otomatis tersimpan sebagai 0 dan siap diedit ulang'
 );
 
-// Test navigasi tombol geser horizontal matriks & toggle ciut sidebar
+// Test navigasi bilah geser horizontal gaya Excel & toggle ciut sidebar
+const appJsCode = fs.readFileSync(path.resolve(__dirname, '../app.js'), 'utf8');
+const styleCssCode = fs.readFileSync(path.resolve(__dirname, '../style.css'), 'utf8');
+const hasExcelBar = appJsCode.includes('excel-h-scrollbar') && appJsCode.includes('initExcelScrollbar');
+const hasExcelCss = styleCssCode.includes('.excel-scrollbar-bar') && styleCssCode.includes('.excel-scroll-thumb');
 assert(
-  true,
+  hasExcelBar && hasExcelCss,
   'F03-H6',
-  'Tombol geser horizontal matriks (kiri & kanan) dan mode ciut sidebar icon-only layar penuh aktif');
+  'Bilah geser horizontal (scrollbar) gaya Excel dengan tombol ◀ ▶ dan slider thumb aktif');
 
 
 // --------------------------------------------------------------------------
