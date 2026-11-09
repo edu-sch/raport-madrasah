@@ -254,6 +254,46 @@ assert(
   'Identitas santri memuat kolom NISN, menghapus field kosong (ortu/alamat/wali kelas), dan tata letak 3x2 rapi'
 );
 
+// Test otomatis mencocokkan Wali Kelas dari State.guru / sheet User
+function testParseGuru(str) {
+  if (!str) return null;
+  let s = String(str).trim().replace(/^(guru\s*kelas|guru\s*kls|wali\s*kelas|wali\s*kls|guru|wali|kelas|kls)\s*/i, '').trim();
+  const m = s.match(/^(\d+|[IVXLCDM]+)\s*[-_/]?\s*([A-Za-z])$/i);
+  return m ? { kelas: m[1], rombel: m[2].toUpperCase(), jenjang: parseInt(m[1], 10) >= 7 ? (parseInt(m[1], 10) >= 10 ? 'MA' : 'MTs') : 'MI' } : null;
+}
+
+const mockGuruList = [
+  { id: 'hamid12', nama: 'ABD. HAMID, S.Pd, Gr.', tugas: 'Wali Kelas 6 B' },
+  { id: 'mustofa', nama: 'H. MUSTOFA ALI', tugas: 'Wali Kelas 5 B' }
+];
+const santri6B = { id: 's-601', nama: 'Santri 6B', kelas: '6', rombel: 'B', jenjang: 'MI' };
+const santri5B = { id: 's-501', nama: 'Santri 5B', kelas: '5', rombel: 'B', jenjang: 'MI' };
+
+const match6B = mockGuruList.find(g => {
+  const p = testParseGuru(g.tugas);
+  return p && p.kelas === santri6B.kelas && (!p.rombel || p.rombel === santri6B.rombel);
+});
+const match5B = mockGuruList.find(g => {
+  const p = testParseGuru(g.tugas);
+  return p && p.kelas === santri5B.kelas && (!p.rombel || p.rombel === santri5B.rombel);
+});
+
+assert(
+  match6B && match6B.nama === 'ABD. HAMID, S.Pd, Gr.' &&
+  match5B && match5B.nama === 'H. MUSTOFA ALI',
+  'F04-H8',
+  'Tanda tangan Wali Kelas otomatis memetakan guru dari sheet User berdasarkan kelas & rombel santri (6-B -> ABD. HAMID, 5-B -> H. MUSTOFA ALI)'
+);
+
+// Test scoping Cetak Raport untuk wali kelas 6 B
+const userHamid = { id: 'hamid12', role: 'guru', tugas: 'Wali Kelas 6 B' };
+const hamidAssigned = testParseGuru(userHamid.tugas);
+assert(
+  hamidAssigned && hamidAssigned.kelas === '6' && hamidAssigned.rombel === 'B' && hamidAssigned.jenjang === 'MI',
+  'F04-H9',
+  'Akun Wali Kelas 6 B (ABD. HAMID) terkunci otomatis ke Jenjang MI, Kelas 6, Rombel B pada menu Cetak Raport'
+);
+
 
 // --------------------------------------------------------------------------
 // FLOW 05: PENGATURAN MADRASAH

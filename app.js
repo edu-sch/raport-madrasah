@@ -1898,25 +1898,54 @@ async function renderCetak() {
     const assigned = getGuruAssignedKelas();
     const jSel = document.getElementById('cetak-jenjang-sel');
     const kSel = document.getElementById('cetak-kelas-sel');
+    const rSel = document.getElementById('cetak-rombel-sel');
 
     if (assigned && assigned.kelas) {
       if (jSel) { jSel.value = assigned.jenjang; jSel.disabled = true; }
-      updateCetakKelasOptions();
+      updateCetakKelasOptions(false);
       if (kSel) { kSel.value = assigned.kelas; kSel.disabled = true; }
-      const rSel = document.getElementById('cetak-rombel-sel');
-      if (rSel && assigned.rombel) { rSel.value = assigned.rombel; rSel.disabled = true; }
+      if (rSel) {
+        if (assigned.rombel) {
+          rSel.value = assigned.rombel;
+          rSel.disabled = true;
+        } else {
+          rSel.disabled = false;
+        }
+      }
     } else {
       if (jSel) jSel.disabled = false;
       if (kSel) kSel.disabled = false;
+      if (rSel) rSel.disabled = false;
+      updateCetakKelasOptions(false);
     }
 
     populateCetakSiswaOptions();
     const cetakTaSel = document.getElementById('cetak-ta-sel');
     if (cetakTaSel) populateTahunAjaranSelect(cetakTaSel, State.settings.tahunAjaran || currentTahunAjaran());
+
     const sel = document.getElementById('cetak-siswa-sel');
+    const previewArea = document.getElementById('raport-preview-area');
+
     if (sel && sel.options.length > 1 && !sel.value) {
       sel.value = sel.options[1].value;
       await generateRaportPreview();
+    } else if (!sel || sel.options.length <= 1) {
+      if (previewArea) {
+        const kelasLabel = assigned ? `Kelas ${assigned.kelas}${assigned.rombel ? ' - ' + assigned.rombel : ''}` : 'kelas yang dipilih';
+        previewArea.innerHTML = `
+          <div class="empty-state" style="background:white;padding:60px 40px;border-radius:8px;text-align:center;box-shadow:0 2px 16px rgba(0,0,0,0.08)">
+            <div class="empty-icon" style="font-size:48px;margin-bottom:12px">📋</div>
+            <h3 style="color:#0f172a;margin-bottom:8px">Belum Ada Siswa di ${kelasLabel}</h3>
+            <p style="color:#64748b;max-width:520px;margin:0 auto 16px;line-height:1.6">
+              Data siswa untuk <strong>${kelasLabel}</strong> belum ditemukan di Google Spreadsheet.<br>
+              Pastikan Anda sudah menginputkan nama santri dengan Kelas <strong>${assigned?.kelas || ''}</strong> dan Rombel <strong>${assigned?.rombel || ''}</strong> di sheet <strong>Siswa</strong> pada Google Spreadsheet.
+            </p>
+            <button class="btn btn-primary" onclick="syncAllData(true)" style="margin:0 auto">
+              🔄 Sinkronisasi Data Spreadsheet
+            </button>
+          </div>
+        `;
+      }
     }
   } catch (e) {
     Toast.error('Gagal memuat data: ' + e.message);
@@ -1951,18 +1980,22 @@ function populateCetakSiswaOptions() {
     ).join('');
 }
 
-function updateCetakKelasOptions() {
-  const jenjang = document.getElementById('cetak-jenjang-sel').value;
+function updateCetakKelasOptions(shouldPopulate = true) {
+  const jEl = document.getElementById('cetak-jenjang-sel');
+  const jenjang = jEl ? jEl.value : 'MI';
   const kelasByJenjang = {
     MI:  ['1','2','3','4','5','6'],
     MTs: ['7','8','9'],
     MA:  ['10','11','12'],
   };
   const kelasSel = document.getElementById('cetak-kelas-sel');
+  if (!kelasSel) return;
   const opts = kelasByJenjang[jenjang] || [];
   kelasSel.innerHTML = `<option value="">-- Semua Kelas --</option>` +
     opts.map(k => `<option value="${k}">${k}</option>`).join('');
-  populateCetakSiswaOptions();
+  if (shouldPopulate) {
+    populateCetakSiswaOptions();
+  }
 }
 
 async function previewRaportSiswa(siswaId) {
@@ -2088,14 +2121,16 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
     `;
   }).join('');
 
-  // Kepala info (SEBELAH KIRI - Mengetahui, TANPA TANGGAL)
-  const kepalaJabatan = escHtml(kepala?.jabatan || 'Kepala Madrasah');
-  const kepalaNama = escHtml(kepala?.nama || '.........................');
-  const kepalaNip = escHtml(kepala?.nip || '-');
-  const kepalaHtml = kepala?.ttdUrl
+  // ─── 1. KEPALA MADRASAH INFO (SEBELAH KIRI - Mengetahui, TANPA TANGGAL) ───
+  const sJenjang = String(siswa.jenjang || inferJenjangFromKelas(siswa.kelas, 'MI')).toUpperCase();
+  const activeKepala = (kepala && kepala.nama) ? kepala : (_kepalaPerJenjang[sJenjang] || State.kepala || {});
+  const kepalaJabatan = escHtml(activeKepala.jabatan || ('Kepala ' + (JENJANG[sJenjang] ? JENJANG[sJenjang] : 'Madrasah')));
+  const rawKepalaNama = String(activeKepala.nama || '').trim();
+  const kepalaNama = escHtml(rawKepalaNama || '.........................');
+  const kepalaHtml = activeKepala.ttdUrl
     ? `<div class="sig-block has-signature">
         <div class="sig-title">Mengetahui,<br>${kepalaJabatan}</div>
-        <img src="${escHtml(kepala.ttdUrl)}" class="sig-image" alt="TTD Kepala" />
+        <img src="${escHtml(activeKepala.ttdUrl)}" class="sig-image" alt="TTD Kepala" />
         <div class="sig-name">${kepalaNama}</div>
       </div>`
     : `<div class="sig-block">
@@ -2103,15 +2138,50 @@ function buildRaportHTML(siswa, mapelList, nilaiMap, absen, semester, ta, kepala
         <div class="sig-name">${kepalaNama}</div>
       </div>`;
 
-  // Wali Kelas info (SEBELAH KANAN - LENGKAP DENGAN TANGGAL)
-  const matchedGuru = (State.guru || []).find(g => 
-    g.nama && siswa.waliKelas && g.nama.trim().toLowerCase() === siswa.waliKelas.trim().toLowerCase()
-  );
-  const waliNama = escHtml(siswa.waliKelas || '.........................');
-  const waliNip = escHtml(matchedGuru?.nip || '-');
+  // ─── 2. WALI KELAS INFO (SEBELAH KANAN - LENGKAP DENGAN TANGGAL) ───
+  let waliNama = '';
+  const sKelas = String(siswa.kelas || '').trim();
+  const sRombel = String(siswa.rombel || '').trim().toUpperCase();
+
+  // A. Cari guru dari State.guru (yang ditarik dari sheet User) berdasarkan kecocokan kelas & rombel
+  if (State.guru && State.guru.length > 0) {
+    const matchedByClass = State.guru.find(g => {
+      if (!g) return false;
+      const tugasStr = g.tugas || g.waliKelas || g.mapelAmpu || '';
+      const p = parseGuruKelasRombel(tugasStr);
+      if (p && String(p.kelas) === sKelas) {
+        if (!p.rombel || !sRombel || p.rombel.toUpperCase() === sRombel) return true;
+      }
+      return false;
+    });
+    if (matchedByClass && matchedByClass.nama) {
+      waliNama = matchedByClass.nama;
+    }
+  }
+
+  // B. Fallback: jika siswa memiliki field waliKelas
+  if (!waliNama && siswa.waliKelas) {
+    waliNama = siswa.waliKelas;
+  }
+
+  // C. Fallback: jika akun yang login adalah Guru dan kelasnya cocok
+  const curUser = typeof Auth !== 'undefined' ? Auth.getUser() : null;
+  if (!waliNama && curUser && curUser.role === 'guru') {
+    const userAssigned = getGuruAssignedKelas();
+    if (userAssigned && String(userAssigned.kelas) === sKelas) {
+      if (!userAssigned.rombel || !sRombel || userAssigned.rombel.toUpperCase() === sRombel) {
+        waliNama = curUser.namaGuru || curUser.nama || '';
+      }
+    }
+  }
+
+  if (!waliNama) {
+    waliNama = '.........................';
+  }
+
   const waliHtml = `<div class="sig-block">
       <div class="sig-title">${lokasiTanggal}<br>Wali Kelas ${kelasLabel}</div>
-      <div class="sig-name">${waliNama}</div>
+      <div class="sig-name">${escHtml(waliNama)}</div>
     </div>`;
 
 
@@ -2732,6 +2802,21 @@ const Auth = {
     sessionStorage.removeItem(this._SESSION_KEY);
     this._currentUser = null;
     Modal.closeAll();
+
+    // Reset preview area & select siswa agar tidak terbawa ke sesi user lain
+    const previewArea = document.getElementById('raport-preview-area');
+    if (previewArea) {
+      previewArea.innerHTML = `
+        <div class="empty-state" style="background:white;padding:60px 40px;border-radius:4px;box-shadow:0 4px 24px rgba(0,0,0,0.15)">
+          <div class="empty-icon">📄</div>
+          <h3>Preview Raport</h3>
+          <p>Pilih siswa dan klik "Preview" untuk melihat raport.</p>
+        </div>
+      `;
+    }
+    const cetakSiswaSel = document.getElementById('cetak-siswa-sel');
+    if (cetakSiswaSel) cetakSiswaSel.innerHTML = '<option value="">-- Pilih Siswa --</option>';
+
     this._showLogin();
     // Reset form
     document.getElementById('login-username').value = '';
@@ -3466,9 +3551,19 @@ async function syncAllData(isManual = false) {
       localStorage.setItem('mdb_kelas', JSON.stringify(State.kelas));
     }
 
-    if (kepalaRes.status === 'fulfilled' && kepalaRes.value?.data) {
-      State.kepala = kepalaRes.value.data;
+    if (kepalaRes.status === 'fulfilled' && kepalaRes.value) {
+      const kepVal = kepalaRes.value;
+      const rawList = kepVal.list || (Array.isArray(kepVal.data) ? kepVal.data : (kepVal.data ? [kepVal.data] : []));
+      rawList.forEach(k => {
+        const j = String(k.jenjang || '').toUpperCase();
+        if (['MI', 'MTs', 'MA'].includes(j)) {
+          _kepalaPerJenjang[j] = { ..._kepalaPerJenjang[j], ...k, jenjang: j };
+        }
+      });
+      State.kepalaList = Object.values(_kepalaPerJenjang);
+      State.kepala = _kepalaPerJenjang['MI'] || rawList[0] || null;
       localStorage.setItem('mdb_kepala', JSON.stringify(State.kepala));
+      localStorage.setItem('mdb_kepala_list', JSON.stringify(State.kepalaList));
     }
 
     if (nilaiRes.status === 'fulfilled' && Array.isArray(nilaiRes.value?.data)) {

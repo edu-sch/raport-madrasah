@@ -461,8 +461,12 @@ function doGet(e) {
 
       // ─── Kepala ─────────
       case 'getKepala': {
-        const all = sheetToObjects(SHEETS.KEPALA);
-        const j = (body?.jenjang || e?.parameter?.jenjang || '').toUpperCase();
+        let all = sheetToObjects(SHEETS.KEPALA);
+        if (!all || all.length === 0) {
+          seedDefaultKepala_();
+          all = sheetToObjects(SHEETS.KEPALA);
+        }
+        const j = (e?.parameter?.jenjang || '').toUpperCase();
         if (j) {
           const match = all.find(k => String(k.jenjang || '').toUpperCase() === j || String(k.id || '').toUpperCase() === 'KEPALA_' + j);
           return jsonResponse({ data: match || all[0] || null, list: all });
@@ -770,6 +774,15 @@ function initSheets() {
     Object.values(SHEETS).join(', ') + '\n\n' +
     'Sekarang deploy sebagai Web App.'
   );
+}
+
+function seedDefaultKepala_() {
+  const defaults = [
+    { id: 'kepala_MI',  jenjang: 'MI',  nama: '', nip: '-', jabatan: 'Kepala Madrasah Ibtidaiyah',  ttdUrl: '', updatedAt: new Date().toISOString() },
+    { id: 'kepala_MTs', jenjang: 'MTs', nama: '', nip: '-', jabatan: 'Kepala Madrasah Tsanawiyah', ttdUrl: '', updatedAt: new Date().toISOString() },
+    { id: 'kepala_MA',  jenjang: 'MA',  nama: '', nip: '-', jabatan: 'Kepala Madrasah Aliyah',     ttdUrl: '', updatedAt: new Date().toISOString() }
+  ];
+  defaults.forEach(d => upsertRecord(SHEETS.KEPALA, d));
 }
 
 function seedDefaultMapel_() {
