@@ -14,6 +14,11 @@ const DataStore = (() => {
       kepala: 'H. AHMAD DAHLAN, S.Pd.I',
       nipKepala: '197805122005011003'
     },
+    kepalaPerJenjang: {
+      MI:  { nama: 'H. AHMAD DAHLAN, S.Pd.I', nip: '197805122005011003', jabatan: 'Kepala Madrasah Ibtidaiyah' },
+      MTs: { nama: 'UST. MUHAMMAD RIDWAN, M.Pd.I', nip: '198203152008011002', jabatan: 'Kepala Madrasah Tsanawiyah' },
+      MA:  { nama: 'DRS. H. ABDUL WAHID, M.Ag', nip: '197211041998031001', jabatan: 'Kepala Madrasah Aliyah' }
+    },
     tahunAjaran: {
       tahun: '2024/2025',
       semester: 'Ganjil',
@@ -101,7 +106,11 @@ const DataStore = (() => {
     // Profil & Pengaturan
     getSettings() {
       const db = _load();
-      return { profile: db.profile, tahunAjaran: db.tahunAjaran };
+      return {
+        profile: db.profile,
+        tahunAjaran: db.tahunAjaran,
+        kepalaPerJenjang: db.kepalaPerJenjang
+      };
     },
 
     saveSettings(newProfile, newTA) {
@@ -224,6 +233,24 @@ const DataStore = (() => {
         totalNilai: total,
         rataRata: count > 0 ? (total / count).toFixed(1) : 0
       };
+    },
+
+    getKepalaPerJenjang(jenjang) {
+      const db = _load();
+      const list = db.kepalaPerJenjang || {
+        MI:  { nama: 'H. AHMAD DAHLAN, S.Pd.I', nip: '197805122005011003', jabatan: 'Kepala Madrasah Ibtidaiyah' },
+        MTs: { nama: 'UST. MUHAMMAD RIDWAN, M.Pd.I', nip: '198203152008011002', jabatan: 'Kepala Madrasah Tsanawiyah' },
+        MA:  { nama: 'DRS. H. ABDUL WAHID, M.Ag', nip: '197211041998031001', jabatan: 'Kepala Madrasah Aliyah' }
+      };
+      return jenjang ? list[jenjang] : list;
+    },
+
+    saveKepalaJenjang(jenjang, data) {
+      const db = _load();
+      if (!db.kepalaPerJenjang) db.kepalaPerJenjang = {};
+      db.kepalaPerJenjang[jenjang] = { ...data, jenjang };
+      _save(db);
+      return db.kepalaPerJenjang[jenjang];
     },
 
     getStats() {

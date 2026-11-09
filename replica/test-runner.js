@@ -161,6 +161,18 @@ assert(cetakData.rows.length === 8, 'F04-H2', 'Seluruh 8 mata pelajaran tercetak
 assert(cetakData.totalNilai > 0 && cetakData.rataRata > 0, 'F04-H3', 'Perhitungan jumlah dan nilai rata-rata akurat');
 assert(cetakData.profile.nama.includes('DARUL BAROKAH'), 'F04-H4', 'Kop surat lembaga madrasah terisi benar');
 
+// Test 3 Kepala Madrasah sesuai jenjang santri (MI, MTs, MA)
+const kepalaMI = DataStore.getKepalaPerJenjang('MI');
+const kepalaMTs = DataStore.getKepalaPerJenjang('MTs');
+const kepalaMA = DataStore.getKepalaPerJenjang('MA');
+assert(
+  kepalaMI && kepalaMTs && kepalaMA &&
+  kepalaMI.nama !== kepalaMTs.nama &&
+  cetakData.profile.kepala === kepalaMI.nama,
+  'F04-H5',
+  'Tersedia 3 Kepala Madrasah mandiri dan santri MI otomatis mencetak nama Kepala MI'
+);
+
 
 // --------------------------------------------------------------------------
 // FLOW 05: PENGATURAN MADRASAH
