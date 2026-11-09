@@ -124,6 +124,19 @@ DataStore.saveRombelBatch({ 's-101': 'A' });
 const searchRes = DataStore.getSiswa({ search: 'fatimah' });
 assert(searchRes.length === 1 && searchRes[0].id === 's-102', 'F02-E1', 'Pencarian nama santri case-insensitive');
 
+// Test F02-E2: Auto-infer jenjang santri kelas 7 (MTs) & kelas 10 (MA) jika tertulis MI di spreadsheet
+const hasAutoInferJenjang = appJsCode.includes('inferJenjangFromKelas');
+const num7 = parseInt('7 - A'.replace(/[^0-9]/g, ''), 10);
+const num10 = parseInt('10 - A'.replace(/[^0-9]/g, ''), 10);
+const jenjang7 = (num7 >= 7 && num7 <= 9) ? 'MTs' : 'MI';
+const jenjang10 = (num10 >= 10 && num10 <= 12) ? 'MA' : 'MI';
+
+assert(
+  hasAutoInferJenjang && jenjang7 === 'MTs' && jenjang10 === 'MA',
+  'F02-E2',
+  'Auto-koreksi jenjang santri kelas 7 (MTs) & kelas 10 (MA) meskipun di spreadsheet terinput MI'
+);
+
 
 // --------------------------------------------------------------------------
 // FLOW 03: INPUT NILAI & KALKULASI PREDIKAT

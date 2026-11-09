@@ -222,18 +222,39 @@ function parseKelasRombel(rawKelas, rawRombel) {
 /**
  * Normalisasi array data siswa agar kelas dan rombel selalu terpisah bersih dan konsisten
  */
+/**
+ * Tentukan atau koreksi jenjang otomatis berdasarkan tingkatan kelas
+ * Kelas 1-6 = MI (Madrasah Ibtidaiyah)
+ * Kelas 7-9 = MTs (Madrasah Tsanawiyah)
+ * Kelas 10-12 = MA (Madrasah Aliyah)
+ */
+function inferJenjangFromKelas(rawKelas, defaultJenjang = 'MI') {
+  const num = parseInt(String(rawKelas || '').replace(/[^0-9]/g, ''), 10);
+  if (num >= 1 && num <= 6) return 'MI';
+  if (num >= 7 && num <= 9) return 'MTs';
+  if (num >= 10 && num <= 12) return 'MA';
+  return defaultJenjang || 'MI';
+}
+
 function normalizeSiswaList(rawList) {
   if (!Array.isArray(rawList)) return [];
-  return rawList.map(s => {
+  return rawList.map((s, idx) => {
     const p = parseKelasRombel(s.kelas, s.rombel);
     const nisn = String(s.nisn || s.NISN || s.Nisn || s['Nomor Induk Siswa Nasional'] || s['No Induk Siswa Nasional'] || '').trim();
     const nis = String(s.nis || s.NIS || s.Nis || '').trim();
     const nama = String(s.nama || s.Nama || s.namaSiswa || s['Nama Siswa'] || s['Nama Lengkap'] || '').trim();
+
+    // Auto-koreksi jenjang jika di spreadsheet tertulis 'MI' untuk kelas 7 atau 10
+    const rawJ = String(s.jenjang || s.Jenjang || '').trim().toUpperCase();
+    const finalJenjang = inferJenjangFromKelas(p.kelas, rawJ || 'MI');
+
     return {
       ...s,
+      id: s.id || (nis ? 's_' + nis : 's_' + (idx + 1)),
       nama: nama || s.nama || '-',
       nis: nis || s.nis || '-',
       nisn: nisn || s.nisn || '',
+      jenjang: finalJenjang,
       kelasRaw: s.kelas,
       kelas: p.kelas,
       rombel: p.rombel
@@ -1213,13 +1234,25 @@ async function loadNilaiSiswaList() {
   </div>`;
 
   try {
-    if (!State.siswa || !State.siswa.length) {
+    try {
       const siswaRes = await DataService.Siswa.getAll();
-      State.siswa = normalizeSiswaList(siswaRes.data || []);
+      if (siswaRes && Array.isArray(siswaRes.data) && siswaRes.data.length > 0) {
+        State.siswa = normalizeSiswaList(siswaRes.data);
+        localStorage.setItem('mdb_siswa', JSON.stringify(State.siswa));
+      }
+    } catch (netErr) {
+      console.warn('Menggunakan cache data siswa:', netErr);
+      if (!State.siswa || !State.siswa.length) {
+        const cached = localStorage.getItem('mdb_siswa');
+        if (cached) {
+          try { State.siswa = JSON.parse(cached); } catch { /* ignore */ }
+        }
+      }
     }
 
     const siswaKelas = State.siswa.filter(s => {
-      const matchJenjang = !jenjang || String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase();
+      const sJenjang = s.jenjang || inferJenjangFromKelas(s.kelas, 'MI');
+      const matchJenjang = !jenjang || sJenjang.toUpperCase() === jenjang.toUpperCase();
       const matchKelas   = String(s.kelas || '').trim() === String(kelas).trim();
       const matchRombel  = !rombel || String(s.rombel || '').toUpperCase() === rombel.toUpperCase();
       return matchJenjang && matchKelas && matchRombel;
@@ -1905,7 +1938,7 @@ function populateCetakSiswaOptions() {
     if (assigned.rombel) list = list.filter(s => String(s.rombel || '').toUpperCase() === assigned.rombel.toUpperCase());
     else if (rombel) list = list.filter(s => String(s.rombel || '').toUpperCase() === rombel.toUpperCase());
   } else {
-    if (jenjang) list = list.filter(s => String(s.jenjang || '').toUpperCase() === jenjang.toUpperCase());
+    if (jenjang) list = list.filter(s => (s.jenjang || inferJenjangFromKelas(s.kelas, 'MI')).toUpperCase() === jenjang.toUpperCase());
     if (kelas)   list = list.filter(s => String(s.kelas) === String(kelas));
     if (rombel)  list = list.filter(s => String(s.rombel || '').toUpperCase() === rombel.toUpperCase());
   }

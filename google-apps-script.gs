@@ -196,6 +196,19 @@ function sheetToObjects(sheetName) {
       if (lowerH === 'rombel' && obj.rombel === undefined) obj.rombel = String(val).trim().toUpperCase();
     });
 
+    if (sheetName === SHEETS.SISWA) {
+      // Auto-koreksi jenjang jika di spreadsheet terisi 'MI' untuk tingkatan kelas 7-9 (MTs) atau 10-12 (MA)
+      var rawK = obj.kelas || '';
+      var numK = parseInt(String(rawK).replace(/[^0-9]/g, ''), 10);
+      if (numK >= 7 && numK <= 9) {
+        obj.jenjang = 'MTs';
+      } else if (numK >= 10 && numK <= 12) {
+        obj.jenjang = 'MA';
+      } else if (numK >= 1 && numK <= 6) {
+        obj.jenjang = 'MI';
+      }
+    }
+
     if (!obj.id) {
       if (sheetName === SHEETS.SISWA) {
         obj.id = obj.nis ? 's_' + obj.nis : 's_' + (rowIdx + 1);
