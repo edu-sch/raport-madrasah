@@ -39,10 +39,10 @@ const DataStore = (() => {
       { id: 'm-8', jenjang: 'MI', nama: 'Tajwid', kkm: 75, urutan: 8 }
     ],
     siswa: [
-      { id: 's-101', nis: '202405001', nama: 'ABDULLAH AHMAD', jenjang: 'MI', kelas: '5', rombel: 'A', wali: 'Ahmad Fauzi', alamat: 'Jatipurwo II/10' },
-      { id: 's-102', nis: '202405002', nama: 'FATIMAH AZ-ZAHRA', jenjang: 'MI', kelas: '5', rombel: 'A', wali: 'Muhammad Ridwan', alamat: 'Jatipurwo V/22' },
-      { id: 's-103', nis: '202405003', nama: 'IBRAHIM AL-FASI', jenjang: 'MI', kelas: '5', rombel: 'A', wali: 'Ali Hasan', alamat: 'Kranggan 14' },
-      { id: 's-104', nis: '202405004', nama: 'KHADIJAH BILQIS', jenjang: 'MI', kelas: '5', rombel: 'A', wali: 'H. Usman', alamat: 'Kedung Mangu 8' },
+      { id: 's-101', nis: '202405001', nisn: '0012345678', nama: 'ABDULLAH AHMAD', jenjang: 'MI', kelas: '5', rombel: 'A', wali: 'Ahmad Fauzi', alamat: 'Jatipurwo II/10' },
+      { id: 's-102', nis: '202405002', nisn: '0012345679', nama: 'FATIMAH AZ-ZAHRA', jenjang: 'MI', kelas: '5', rombel: 'A', wali: 'Muhammad Ridwan', alamat: 'Jatipurwo V/22' },
+      { id: 's-103', nis: '202405003', nisn: '0012345680', nama: 'IBRAHIM AL-FASI', jenjang: 'MI', kelas: '5', rombel: 'A', wali: 'Ali Hasan', alamat: 'Kranggan 14' },
+      { id: 's-104', nis: '202405004', nisn: '0012345681', nama: 'KHADIJAH BILQIS', jenjang: 'MI', kelas: '5', rombel: 'A', wali: 'H. Usman', alamat: 'Kedung Mangu 8' },
       { id: 's-105', nis: '202405005', nama: 'MUHAMMAD ZULFIKAR', jenjang: 'MI', kelas: '5', rombel: 'B', wali: 'Zulham Efendi', alamat: 'Sidotopo Kidul 4' },
       { id: 's-106', nis: '202405006', nama: 'AISYAH NUR CAHYANI', jenjang: 'MI', kelas: '5', rombel: 'B', wali: 'Nur Hidayat', alamat: 'Pegirian 30' }
     ],

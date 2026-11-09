@@ -448,11 +448,11 @@ const App = (() => {
 
           <div class="raport-meta-grid">
             <div><strong>Nama Santri:</strong> ${data.siswa.nama}</div>
-            <div><strong>Semester:</strong> ${data.tahunAjaran.semester}</div>
-            <div><strong>Nomor Induk (NIS):</strong> ${data.siswa.nis}</div>
-            <div><strong>Tahun Ajaran:</strong> ${data.tahunAjaran.tahun}</div>
-            <div><strong>Kelas / Rombel:</strong> Kelas ${data.siswa.kelas} Rombel ${data.siswa.rombel}</div>
-            <div><strong>Wali Santri:</strong> ${data.siswa.wali}</div>
+            <div><strong>Kelas / Rombel:</strong> Kelas ${data.siswa.kelas} ${data.siswa.rombel}</div>
+            <div><strong>NISN:</strong> ${data.siswa.nisn || '-'}</div>
+            <div><strong>Jenjang:</strong> MADRASAH IBTIDAIYAH</div>
+            <div><strong>NIS:</strong> ${data.siswa.nis}</div>
+            <div><strong>Tahun Pelajaran:</strong> ${data.tahunAjaran.tahun} (${data.tahunAjaran.semester})</div>
           </div>
 
           <table class="raport-table">

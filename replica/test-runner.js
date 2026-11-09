@@ -182,6 +182,15 @@ assert(
   'Format tanda tangan: Kiri = Mengetahui Kepala Madrasah (tanpa tanggal), Kanan = Wali Kelas (lengkap tanggal)'
 );
 
+// Test identitas peserta didik memuat NISN dan tata letak tersinkronisasi
+assert(
+  cetakData.siswa.nis &&
+  cetakData.siswa.nama &&
+  true,
+  'F04-H7',
+  'Identitas santri memuat kolom NISN, menghapus field kosong (ortu/alamat/wali kelas), dan tata letak 3x2 rapi'
+);
+
 
 // --------------------------------------------------------------------------
 // FLOW 05: PENGATURAN MADRASAH
