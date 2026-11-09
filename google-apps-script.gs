@@ -37,7 +37,7 @@ const SHEETS = {
   SISWA:      'Siswa',
   NILAI:      'Nilai',
   MAPEL:      'MapelConfig',
-  GURU:       'GuruData',
+  GURU:       'User',
   KEPALA:     'KepalaData',
   KELAS:      'Kelas',
   AKUN:       'AkunGuru',
@@ -74,7 +74,6 @@ function getSheet(name) {
 
   // Cek alias nama sheet umum di Google Sheets
   const aliases = {
-    [SHEETS.GURU]: ['Guru', 'DataGuru', 'Data Guru', 'Teachers', 'GuruData'],
     [SHEETS.USER]: ['User', 'Users', 'Akun', 'AkunGuru', 'Akun Guru'],
     [SHEETS.SISWA]: ['Siswa', 'DataSiswa', 'Data Siswa', 'Students'],
     [SHEETS.MAPEL]: ['Mapel', 'MataPelajaran', 'Mata Pelajaran', 'MapelConfig'],
@@ -100,7 +99,6 @@ function getSheet(name) {
     [SHEETS.SISWA]:      ['id','nama','nis','nisn','jenjang','kelas','rombel','alamat','namaWali','waliKelas','tempatLahir','tanggalLahir','jenisKelamin','createdAt','updatedAt'],
     [SHEETS.NILAI]:      ['id','siswaId','mapelId','mapelNama','guru','nilai','jenjang','kelas','rombel','semester','tahunAjaran','updatedAt'],
     [SHEETS.MAPEL]:      ['id','jenjang','nama','urutan','kkm','guru'],
-    [SHEETS.GURU]:       ['id','nama','nip','telepon','alamat','waliKelas'],
     [SHEETS.KEPALA]:     ['id','jenjang','nama','nip','jabatan','ttdUrl','updatedAt'],
     [SHEETS.KELAS]:      ['id','nama','jenjang'],
     [SHEETS.AKUN]:       ['id','username','namaGuru','role','waliKelas','passwordHash','aktif','createdAt','updatedAt'],
@@ -331,57 +329,16 @@ function parseTugasToWaliKelas_(tugas) {
 function getUsersFromSheet_() {
   var userSheet = getSheet(SHEETS.USER);
   var rawRows = sheetToObjects(userSheet.getName());
-
-  // Ambil data guru dari sheet Guru jika ada untuk melengkapi mapelAmpu / tugas wali kelas
-  var guruSheet = getSheet(SHEETS.GURU);
-  var rawGuru = guruSheet ? sheetToObjects(guruSheet.getName()) : [];
-
-  if (!rawRows || rawRows.length === 0) {
-    if (rawGuru && rawGuru.length > 0) {
-      return rawGuru.map(function(g, idx) {
-        var nama = String(g.nama || '').trim();
-        var username = String(g.id || g.nama || ('user_' + idx)).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        var tugas = String(g.mapelAmpu || g.waliKelas || g.tugas || '').trim();
-        var waliKelas = parseTugasToWaliKelas_(tugas);
-        return {
-          id: g.id || username,
-          username: username,
-          user: username,
-          password: '123',
-          namaGuru: nama,
-          nama: nama,
-          tugas: tugas,
-          waliKelas: waliKelas,
-          role: 'guru',
-          status: 'Aktif',
-          aktif: true
-        };
-      });
-    }
-    return [];
-  }
+  if (!rawRows || rawRows.length === 0) return [];
 
   return rawRows.map(function(r, idx) {
-    var user = String(r.user || r.User || r.username || r.Username || '').trim();
+    var user = String(r.user || r.User || r.username || r.Username || r.id || '').trim();
     var pass = String(r.password || r.Password || '').trim();
     var nama = String(r['Nama Guru'] || r.namaGuru || r.nama || r.Nama || user).trim();
-    var tugas = String(r.Tugas || r.tugas || r.waliKelas || '').trim();
-
-    // Cross-check dengan data Guru di spreadsheet
-    if (rawGuru && rawGuru.length > 0) {
-      var matchG = rawGuru.find(function(g) {
-        var gName = String(g.nama || '').trim().toLowerCase();
-        var uName = nama.trim().toLowerCase();
-        return gName === uName || String(g.id || '').trim().toLowerCase() === user.toLowerCase();
-      });
-      if (matchG && (matchG.mapelAmpu || matchG.waliKelas)) {
-        tugas = matchG.mapelAmpu || matchG.waliKelas;
-      }
-    }
-
+    var tugas = String(r.Tugas || r.tugas || r.waliKelas || r.mapelAmpu || '').trim();
     var rawStat = String(r.Status || r.status || 'Aktif').trim();
     var aktif = (rawStat.toLowerCase() === 'aktif' || rawStat === '1' || rawStat.toLowerCase() === 'active');
-    var role = (user.toLowerCase() === 'admin') ? 'admin' : 'guru';
+    var role = (user.toLowerCase() === 'admin') ? 'admin' : (r.role || 'guru');
     var waliKelas = parseTugasToWaliKelas_(tugas);
 
     return {
@@ -392,12 +349,16 @@ function getUsersFromSheet_() {
       namaGuru: nama,
       nama: nama,
       tugas: tugas,
+      mapelAmpu: tugas,
       waliKelas: waliKelas,
+      nip: String(r.nip || r.NIP || '').trim(),
+      telepon: String(r.telepon || r.Telepon || '').trim(),
+      alamat: String(r.alamat || r.Alamat || '').trim(),
       role: role,
       status: rawStat,
       aktif: aktif
     };
-  }).filter(function(u) { return u.username.length > 0; });
+  }).filter(function(u) { return (u.username && u.username.length > 0) || (u.nama && u.nama.length > 0); });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -457,63 +418,45 @@ function doGet(e) {
         return jsonResponse({ data: all.filter(m => m.jenjang === jenjang) });
       }
 
-      // ─── Guru ───────────
+      // ─── Guru (diambil langsung 100% dari sheet User) ───────────
       case 'getGuru': {
-        const rawGuru = sheetToObjects(SHEETS.GURU);
-        if (rawGuru && rawGuru.length > 0) {
-          const mappedGuru = rawGuru.map(function(g) {
-            var t = g.mapelAmpu || g.waliKelas || g.tugas || '';
-            return {
-              id: g.id || '',
-              nama: g.nama || '',
-              nip: g.nip || '',
-              mapelAmpu: g.mapelAmpu || t,
-              waliKelas: g.waliKelas || t,
-              tugas: g.tugas || t,
-              telepon: g.telepon || '',
-              alamat: g.alamat || ''
-            };
-          });
-          return jsonResponse({ data: mappedGuru });
-        }
         const users = getUsersFromSheet_();
-        if (users && users.length > 0) {
-          const guruList = users.map(function(u) {
-            return {
-              id: u.username || u.id,
-              nama: u.namaGuru || u.username,
-              waliKelas: u.waliKelas || u.tugas,
-              mapelAmpu: u.waliKelas || u.tugas,
-              tugas: u.tugas || '',
-              nip: '',
-              telepon: '',
-              alamat: ''
-            };
-          });
-          return jsonResponse({ data: guruList });
-        }
-        return jsonResponse({ data: [] });
+        const guruList = users.map(function(u) {
+          return {
+            id: u.username || u.id,
+            nama: u.namaGuru || u.username,
+            waliKelas: u.waliKelas || u.tugas,
+            mapelAmpu: u.mapelAmpu || u.tugas,
+            tugas: u.tugas || '',
+            nip: u.nip || '',
+            telepon: u.telepon || '',
+            alamat: u.alamat || ''
+          };
+        });
+        return jsonResponse({ data: guruList });
       }
 
       case 'getGuruById': {
         const id = e.parameter.id;
         const users = getUsersFromSheet_();
-        if (users && users.length > 0) {
-          const found = users.find(function(u) { return u.id === id || u.username === id; });
-          if (found) {
-            return jsonResponse({
-              data: {
-                id: found.username || found.id,
-                nama: found.namaGuru,
-                waliKelas: found.waliKelas,
-                tugas: found.tugas,
-                nip: '', telepon: '', alamat: ''
-              }
-            });
-          }
+        const found = users.find(function(u) {
+          return u.id === id || u.username === id || (u.nama && u.nama.toLowerCase() === String(id).toLowerCase());
+        });
+        if (found) {
+          return jsonResponse({
+            data: {
+              id: found.username || found.id,
+              nama: found.namaGuru,
+              waliKelas: found.waliKelas,
+              mapelAmpu: found.mapelAmpu,
+              tugas: found.tugas,
+              nip: found.nip || '',
+              telepon: found.telepon || '',
+              alamat: found.alamat || ''
+            }
+          });
         }
-        const all = sheetToObjects(SHEETS.GURU);
-        return jsonResponse({ data: all.find(g => g.id === id) || null });
+        return jsonResponse({ data: null });
       }
 
       // ─── Kepala ─────────
@@ -673,17 +616,24 @@ function doPost(e) {
         return jsonResponse({ ok: true, count: items.length });
       }
 
-      // ─── Guru ───────────────────────
+      // ─── Guru (disimpan langsung ke sheet User) ───────
       case 'saveGuru': {
         const data = body.data;
-        if (!data?.id) return errorResponse('ID guru diperlukan');
-        upsertRecord(SHEETS.GURU, data);
-        return jsonResponse({ ok: true, data });
+        if (!data) return errorResponse('Data guru diperlukan');
+        const userObj = {
+          user: data.username || data.user || data.id || data.nama,
+          password: data.password || '123',
+          'Nama Guru': data.nama || data.namaGuru || '',
+          Tugas: data.mapelAmpu || data.tugas || data.waliKelas || '',
+          Status: data.status || 'Aktif'
+        };
+        upsertRecord(SHEETS.USER, userObj);
+        return jsonResponse({ ok: true, data: userObj });
       }
 
       case 'deleteGuru': {
         const { id } = body;
-        deleteRecord(SHEETS.GURU, id);
+        deleteRecord(SHEETS.USER, id);
         return jsonResponse({ ok: true });
       }
 

@@ -3388,11 +3388,10 @@ async function syncAllData(isManual = false) {
     // Bersihkan cache agar data terbaru selalu ditarik dari spreadsheet
     SheetsAPI.clearCache();
 
-    // Unduh semua koleksi secara paralel
-    const [siswaRes, akunRes, guruRes, mapelRes, kelasRes, kepalaRes, nilaiRes, pengRes] = await Promise.allSettled([
+    // Unduh semua koleksi secara paralel (sheet GuruData sudah dihapus, guru diambil 100% dari sheet User)
+    const [siswaRes, akunRes, mapelRes, kelasRes, kepalaRes, nilaiRes, pengRes] = await Promise.allSettled([
       SheetsAPI.Siswa.getAll(),
       SheetsAPI.Akun.getAll(),
-      SheetsAPI.Guru.getAll(),
       SheetsAPI.Mapel.getAll(),
       SheetsAPI.Kelas.getAll(),
       SheetsAPI.Kepala.get(),
@@ -3409,7 +3408,7 @@ async function syncAllData(isManual = false) {
       const normalizedAccounts = akunRes.value.data.map(u => {
         const username = String(u.user || u.username || u.User || u.id || '').trim();
         const namaGuru = String(u['Nama Guru'] || u.namaGuru || u.nama || u.Nama || username).trim();
-        const tugas    = String(u.Tugas || u.tugas || u.waliKelas || '').trim();
+        const tugas    = String(u.Tugas || u.tugas || u.waliKelas || u.mapelAmpu || '').trim();
         const rawStatus = String(u.Status || u.status || 'Aktif').trim();
         const aktif = (u.aktif === true || rawStatus.toLowerCase() === 'aktif' || rawStatus === '1');
         const role = (username.toLowerCase() === 'admin') ? 'admin' : (u.role || 'guru');
@@ -3425,6 +3424,7 @@ async function syncAllData(isManual = false) {
           namaGuru:     namaGuru,
           tugas:        tugas,
           waliKelas:    waliKelas,
+          mapelAmpu:    tugas,
           role:         role,
           status:       rawStatus,
           aktif:        aktif
@@ -3432,6 +3432,19 @@ async function syncAllData(isManual = false) {
       });
 
       Auth._saveAccounts(normalizedAccounts);
+
+      // Seluruh data guru ditarik langsung 100% dari sheet User
+      State.guru = normalizedAccounts.map(a => ({
+        id:        a.id || a.username,
+        nama:      a.namaGuru,
+        waliKelas: a.waliKelas,
+        tugas:     a.tugas,
+        mapelAmpu: a.tugas,
+        nip:       '',
+        telepon:   '',
+        alamat:    ''
+      }));
+      localStorage.setItem('mdb_guru', JSON.stringify(State.guru));
 
       // Perbarui juga data session aktif jika user sedang login
       if (Auth._currentUser) {
@@ -3442,40 +3455,6 @@ async function syncAllData(isManual = false) {
         }
       }
     }
-
-    // Ambil data guru dari sheet Guru (SHEETS.GURU)
-    let finalGuruList = [];
-    if (guruRes.status === 'fulfilled' && Array.isArray(guruRes.value?.data) && guruRes.value.data.length > 0) {
-      finalGuruList = guruRes.value.data.map(g => {
-        const tugas = g.mapelAmpu || g.waliKelas || g.tugas || '';
-        return {
-          ...g,
-          mapelAmpu: g.mapelAmpu || tugas,
-          waliKelas: g.waliKelas || tugas,
-          tugas: g.tugas || tugas
-        };
-      });
-    }
-
-    // Lengkapi dengan akun guru jika belum ada di finalGuruList
-    const cachedAccounts = Auth._getAccounts();
-    cachedAccounts.forEach(a => {
-      if (a.role === 'guru' && !finalGuruList.some(g => (g.nama && g.nama.toLowerCase() === a.namaGuru.toLowerCase()) || g.id === a.id)) {
-        finalGuruList.push({
-          id:        a.id || a.username,
-          nama:      a.namaGuru,
-          waliKelas: a.waliKelas,
-          tugas:     a.tugas,
-          mapelAmpu: a.tugas,
-          nip:       '',
-          telepon:   '',
-          alamat:    ''
-        });
-      }
-    });
-
-    State.guru = finalGuruList;
-    localStorage.setItem('mdb_guru', JSON.stringify(State.guru));
 
     if (mapelRes.status === 'fulfilled' && Array.isArray(mapelRes.value?.data)) {
       State.mapel = mapelRes.value.data;
