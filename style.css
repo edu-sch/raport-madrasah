@@ -1834,3 +1834,129 @@ body.sidebar-collapsed .sheets-status {
   border-color: #4b5563;
   cursor: grabbing;
 }
+
+/* ─── MATRIX MAPEL PAGINATION (5 Mapel / Halaman - Image 2 Style) ─────────────── */
+.matrix-pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin: 10px 0;
+  font-family: inherit;
+  color: #64748b;
+  font-size: 0.9rem;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.matrix-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.matrix-page-link {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #64748b;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.matrix-page-link:hover:not(:disabled) {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.matrix-page-link:disabled {
+  color: #cbd5e1;
+  cursor: not-allowed;
+}
+
+.matrix-page-nums-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.matrix-page-num {
+  min-width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: #475569;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: transparent;
+  padding: 0 10px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.matrix-page-num:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.matrix-page-num.active {
+  background: #16445f;
+  color: #ffffff;
+  font-weight: 700;
+  border-color: #16445f;
+  box-shadow: 0 2px 5px rgba(22, 68, 95, 0.25);
+}
+
+.matrix-pagination-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.86rem;
+  color: #64748b;
+}
+
+.matrix-badge-range {
+  background: #ffffff;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 600;
+  color: #16445f;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.matrix-page-total {
+  font-weight: 600;
+  color: #64748b;
+}
+
+/* Sticky Total & Average column styling */
+th.matrix-col-total,
+td.matrix-col-total {
+  position: sticky;
+  right: 80px;
+  z-index: 7;
+}
+
+th.matrix-col-avg,
+td.matrix-col-avg {
+  position: sticky;
+  right: 0;
+  z-index: 7;
+}
+
+th.matrix-col-total,
+th.matrix-col-avg {
+  z-index: 12;
+}

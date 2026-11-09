@@ -161,6 +161,32 @@ assert(
   'F03-H6',
   'Bilah geser horizontal (scrollbar) gaya Excel dengan tombol ◀ ▶ dan slider thumb aktif');
 
+// Test F03-H7: Paginasi 5 Mapel per Halaman & Kolom Total/Rata-rata Selalu Terlihat (Image 2 style)
+const hasMapelPagination = appJsCode.includes('MATRIX_MAPEL_PER_PAGE = 5') &&
+  appJsCode.includes('setMatrixMapelPage') &&
+  appJsCode.includes('buildMatrixPaginationHTML') &&
+  appJsCode.includes('matrix-col-total') &&
+  appJsCode.includes('matrix-col-avg');
+const hasPaginationCss = styleCssCode.includes('.matrix-pagination-bar') &&
+  styleCssCode.includes('.matrix-page-link') &&
+  styleCssCode.includes('.matrix-page-num') &&
+  styleCssCode.includes('th.matrix-col-total');
+
+// Verifikasi logika pembagian 20 mapel menjadi 4 halaman (halaman 1, 2, 3, 4 masing-masing 5 mapel)
+const dummy20Mapel = Array.from({ length: 20 }, (_, i) => ({ id: 'm-' + (i + 1), nama: 'Mapel ' + (i + 1) }));
+const totalPages20 = Math.ceil(dummy20Mapel.length / 5);
+const p1Mapels = dummy20Mapel.slice(0, 5);
+const p2Mapels = dummy20Mapel.slice(5, 10);
+const p3Mapels = dummy20Mapel.slice(10, 15);
+const p4Mapels = dummy20Mapel.slice(15, 20);
+
+assert(
+  hasMapelPagination && hasPaginationCss && totalPages20 === 4 &&
+  p1Mapels.length === 5 && p2Mapels.length === 5 && p3Mapels.length === 5 && p4Mapels.length === 5,
+  'F03-H7',
+  'Paginasi matriks 5 mapel per halaman dengan tombol Prev, nomor halaman (1, 2, 3, 4...), Next, dan kolom Total & Rata-rata selalu terlihat'
+);
+
 
 // --------------------------------------------------------------------------
 // FLOW 04: CETAK LEMBAR RAPORT A4

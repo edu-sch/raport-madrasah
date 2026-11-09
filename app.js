@@ -941,6 +941,8 @@ let _nilaiMode = 'matrix'; // 'matrix' | 'absen' | 'mapel'
 let _currentMatrixMap = {}; // key: `${siswaId}_${mapelId}` -> numeric grade or ''
 let _currentMatrixSiswaList = [];
 let _currentMatrixMapelList = [];
+let _currentMatrixMapelPage = 1;
+const MATRIX_MAPEL_PER_PAGE = 5;
 let _currentNilaiMap = {}; // siswaId => numeric grade
 let _currentAbsenMap = {}; // siswaId => { hadir, sakit, izin, alpa, catatan }
 
@@ -3516,11 +3518,219 @@ document.addEventListener('DOMContentLoaded', initApp);
 
 
 /**
- * ─── MATRIKS NILAI LENGKAP (ALL SUBJECTS GRID) ───────────────
- * Header: Seluruh Nama Mapel
- * Baris Kiri: Seluruh Nama Siswa
- * Input sekaligus, jika kosong tersimpan 0, dan bisa diedit kapan saja.
+ * ─── MATRIKS NILAI LENGKAP (ALL SUBJECTS GRID - 5 MAPEL / HALAMAN) ───────────
+ * Menampilkan 5 mata pelajaran per halaman agar kolom Total & Rata-rata selalu terlihat.
+ * Dilengkapi paginasi Prev, 1, 2, 3..., Next sesuai tata letak modern.
+ * Input massal, jika kosong tersimpan 0, dan dapat diedit kapan saja.
  */
+function getMatrixPageCount() {
+  const count = _currentMatrixMapelList ? _currentMatrixMapelList.length : 0;
+  return Math.max(1, Math.ceil(count / MATRIX_MAPEL_PER_PAGE));
+}
+
+function getMatrixCurrentPageMapels(page = _currentMatrixMapelPage) {
+  if (!_currentMatrixMapelList || !_currentMatrixMapelList.length) return [];
+  const start = (page - 1) * MATRIX_MAPEL_PER_PAGE;
+  return _currentMatrixMapelList.slice(start, start + MATRIX_MAPEL_PER_PAGE);
+}
+
+function syncCurrentMatrixInputsToMap() {
+  const inputs = document.querySelectorAll('.matrix-nilai-input');
+  inputs.forEach(inp => {
+    const sId = inp.getAttribute('data-siswa-id');
+    const mId = inp.getAttribute('data-mapel-id');
+    if (sId && mId) {
+      _currentMatrixMap[`${sId}_${mId}`] = inp.value;
+    }
+  });
+}
+
+function setMatrixMapelPage(newPage, opts = {}) {
+  const totalPages = getMatrixPageCount();
+  if (newPage < 1 || newPage > totalPages) return;
+
+  // 1. Simpan input yang aktif saat ini di DOM ke memori _currentMatrixMap
+  syncCurrentMatrixInputsToMap();
+
+  // 2. Set halaman baru
+  _currentMatrixMapelPage = newPage;
+
+  // 3. Render ulang konten tabel & pagination bar
+  renderMatrixTableContent();
+
+  // 4. Fokus ke input jika dipanggil dari navigasi tombol keyboard panah
+  if (opts.focusRow !== undefined) {
+    const pageMapels = getMatrixCurrentPageMapels();
+    const targetMapel = opts.focusLastCol ? pageMapels[pageMapels.length - 1] : (opts.focusFirstCol ? pageMapels[0] : null);
+    const targetSiswa = _currentMatrixSiswaList[opts.focusRow];
+    if (targetSiswa && targetMapel) {
+      setTimeout(() => {
+        const inp = document.getElementById(`mat_${targetSiswa.id}_${targetMapel.id}`);
+        if (inp) {
+          inp.focus();
+          inp.select();
+        }
+      }, 30);
+    }
+  }
+}
+
+function buildMatrixPaginationHTML(placement = 'top') {
+  const totalMapel = _currentMatrixMapelList ? _currentMatrixMapelList.length : 0;
+  if (totalMapel === 0) return '';
+
+  const totalPages = getMatrixPageCount();
+  const currentPage = _currentMatrixMapelPage;
+  const startIdx = (currentPage - 1) * MATRIX_MAPEL_PER_PAGE + 1;
+  const endIdx = Math.min(currentPage * MATRIX_MAPEL_PER_PAGE, totalMapel);
+
+  let pageNumbersHtml = '';
+  for (let p = 1; p <= totalPages; p++) {
+    const pStart = (p - 1) * MATRIX_MAPEL_PER_PAGE + 1;
+    const pEnd = Math.min(p * MATRIX_MAPEL_PER_PAGE, totalMapel);
+    const isActive = p === currentPage;
+    pageNumbersHtml += `
+      <button type="button" 
+        class="matrix-page-num ${isActive ? 'active' : ''}" 
+        onclick="setMatrixMapelPage(${p})"
+        title="Tampilkan Mapel ke-${pStart} s/d ${pEnd}">
+        ${p}
+      </button>
+    `;
+  }
+
+  const prevDisabled = currentPage <= 1;
+  const nextDisabled = currentPage >= totalPages;
+
+  return `
+    <div class="matrix-pagination-bar" id="matrix-pagination-${placement}">
+      <div class="matrix-pagination-controls">
+        <button type="button" 
+          class="matrix-page-link" 
+          onclick="setMatrixMapelPage(${currentPage - 1})" 
+          ${prevDisabled ? 'disabled' : ''}
+          title="Halaman Mapel Sebelumnya">
+          Prev
+        </button>
+        <div class="matrix-page-nums-group">
+          ${pageNumbersHtml}
+        </div>
+        <button type="button" 
+          class="matrix-page-link" 
+          onclick="setMatrixMapelPage(${currentPage + 1})" 
+          ${nextDisabled ? 'disabled' : ''}
+          title="Halaman Mapel Berikutnya">
+          Next
+        </button>
+      </div>
+
+      <div class="matrix-pagination-info">
+        <span class="matrix-badge-range">
+          📖 Mapel <strong>${startIdx}–${endIdx}</strong> dari ${totalMapel}
+        </span>
+        <span class="matrix-page-total">
+          Total: <strong>${totalMapel} Mapel</strong>
+        </span>
+      </div>
+    </div>
+  `;
+}
+
+function renderMatrixTableContent() {
+  const container = document.getElementById('matrix-table-container');
+  if (!container) return;
+
+  const mapelList = _currentMatrixMapelList;
+  const siswaList = _currentMatrixSiswaList;
+  const totalMapel = mapelList.length;
+  const pageMapels = getMatrixCurrentPageMapels();
+  const pageColCount = pageMapels.length;
+
+  container.innerHTML = `
+    <table class="nilai-table" id="table-matrix-nilai" style="border-collapse:separate;border-spacing:0;font-size:0.88rem;width:100%;">
+      <thead>
+        <tr style="position:sticky;top:0;z-index:10;background:#16445f;color:#fff;">
+          <th style="width:40px;text-align:center;position:sticky;left:0;z-index:12;background:#16445f;border-right:1px solid rgba(255,255,255,0.15);">No</th>
+          <th style="width:85px;text-align:center;position:sticky;left:40px;z-index:12;background:#16445f;border-right:1px solid rgba(255,255,255,0.15);">NIS</th>
+          <th style="min-width:200px;max-width:240px;text-align:left;position:sticky;left:125px;z-index:12;background:#16445f;box-shadow:2px 0 5px rgba(0,0,0,0.2);border-right:2px solid #cbd5e1;">Nama Siswa</th>
+          ${pageMapels.map((m, colIdx) => `
+            <th style="min-width:125px;text-align:center;padding:10px 8px;vertical-align:middle;border-right:1px solid rgba(255,255,255,0.15);" title="KKM: ${m.kkm ?? 70}">
+              <div style="font-weight:700;line-height:1.2;font-size:0.86rem;">${escHtml(m.nama)}</div>
+              <div style="font-size:0.75rem;font-weight:600;opacity:0.85;margin-top:2px;">(KKM: ${m.kkm ?? 70})</div>
+            </th>
+          `).join('')}
+          <th class="matrix-col-total" style="width:80px;text-align:center;background:#0d2d3f;border-left:2px solid #cbd5e1;position:sticky;right:80px;z-index:12;color:#fff;">Total</th>
+          <th class="matrix-col-avg" style="width:80px;text-align:center;background:#0d2d3f;position:sticky;right:0;z-index:12;color:#fff;">Rata²</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${siswaList.map((s, rowIdx) => {
+          let rowTotal = 0;
+          let rowCount = 0;
+          mapelList.forEach(m => {
+            const v = _currentMatrixMap[`${s.id}_${m.id}`];
+            if (v !== '' && v !== undefined && !isNaN(parseFloat(v))) {
+              rowTotal += parseFloat(v);
+              rowCount++;
+            }
+          });
+          const rowAvg = totalMapel > 0 ? (rowTotal / totalMapel).toFixed(1) : '-';
+
+          return `
+            <tr data-siswa-id="${escHtml(s.id)}" style="background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+              <td style="text-align:center;position:sticky;left:0;z-index:5;background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">${rowIdx + 1}</td>
+              <td style="text-align:center;position:sticky;left:40px;z-index:5;background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">${escHtml(s.nis || '-')}</td>
+              <td style="position:sticky;left:125px;z-index:5;background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};font-weight:700;color:#0f172a;white-space:nowrap;border-bottom:1px solid #e2e8f0;box-shadow:2px 0 5px rgba(0,0,0,0.08);border-right:2px solid #cbd5e1;">
+                ${escHtml(s.nama)}
+              </td>
+              ${pageMapels.map((m, colIdx) => {
+                const key = `${s.id}_${m.id}`;
+                const val = _currentMatrixMap[key];
+                const kkm = m.kkm ?? 70;
+                const isBelow = val !== '' && !isNaN(parseFloat(val)) && parseFloat(val) < kkm;
+                return `
+                  <td style="text-align:center;padding:4px 6px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;background:${isBelow ? '#fff1f2' : ''};">
+                    <input type="number" min="0" max="100" step="0.5"
+                      class="matrix-nilai-input"
+                      id="mat_${escHtml(s.id)}_${escHtml(m.id)}"
+                      data-row="${rowIdx}"
+                      data-col="${colIdx}"
+                      data-siswa-id="${escHtml(s.id)}"
+                      data-mapel-id="${escHtml(m.id)}"
+                      value="${val !== undefined && val !== '' ? val : ''}"
+                      placeholder="0"
+                      oninput="onMatrixInput('${escHtml(s.id)}', '${escHtml(m.id)}', this.value, ${kkm})"
+                      onkeydown="onMatrixKeyDown(event, ${rowIdx}, ${colIdx}, ${pageColCount})"
+                      style="width:72px;text-align:center;font-weight:700;font-size:0.95rem;padding:5px 2px;border:1.5px solid ${isBelow ? '#fda4af' : '#cbd5e1'};border-radius:6px;background:#ffffff;color:${isBelow ? '#be123c' : '#0f172a'};"
+                    />
+                  </td>
+                `;
+              }).join('')}
+              <td id="mat_total_${escHtml(s.id)}" class="matrix-col-total" style="text-align:center;font-weight:800;color:#1e293b;border-left:2px solid #cbd5e1;border-bottom:1px solid #e2e8f0;position:sticky;right:80px;z-index:7;background:${rowIdx % 2 === 0 ? '#f1f5f9' : '#e2e8f0'};">
+                ${rowTotal > 0 ? rowTotal.toFixed(0) : '-'}
+              </td>
+              <td id="mat_avg_${escHtml(s.id)}" class="matrix-col-avg" style="text-align:center;font-weight:800;color:#059669;border-bottom:1px solid #e2e8f0;position:sticky;right:0;z-index:7;background:${rowIdx % 2 === 0 ? '#f1f5f9' : '#e2e8f0'};">
+                ${rowAvg}
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+
+  // Update top and bottom pagination bars
+  const topPaginationEl = document.getElementById('matrix-pagination-top-wrap');
+  const bottomPaginationEl = document.getElementById('matrix-pagination-bottom-wrap');
+  if (topPaginationEl) topPaginationEl.innerHTML = buildMatrixPaginationHTML('top');
+  if (bottomPaginationEl) bottomPaginationEl.innerHTML = buildMatrixPaginationHTML('bottom');
+
+  // Re-init or update Excel scrollbar
+  if (typeof initExcelScrollbar === 'function') {
+    initExcelScrollbar();
+  }
+}
+
 function renderNilaiMatriks(mapelList, siswaList, existingMap) {
   const container = document.getElementById('nilai-siswa-list');
   const { kelas, rombel, semester, tahunAjaran } = State.filterNilai;
@@ -3529,6 +3739,7 @@ function renderNilaiMatriks(mapelList, siswaList, existingMap) {
   _currentMatrixSiswaList = siswaList;
   _currentMatrixMapelList = mapelList;
   _currentMatrixMap = {};
+  _currentMatrixMapelPage = 1;
 
   // Inisialisasi nilai dari database
   siswaList.forEach(s => {
@@ -3548,7 +3759,7 @@ function renderNilaiMatriks(mapelList, siswaList, existingMap) {
       <div>
         <h3 style="font-size:1.15rem;margin:0;font-weight:700">📊 Matriks Nilai Seluruh Mata Pelajaran</h3>
         <div style="font-size:0.82rem;color:rgba(255,255,255,0.85);margin-top:3px">
-          Kelas <strong>${escHtml(kelas)}${escHtml(rombelLabel)}</strong> &bull; Semester <strong>${escHtml(semester)}</strong> &bull; TA <strong>${escHtml(tahunAjaran)}</strong> &bull; <strong>${totalSiswa} Siswa</strong> &bull; <strong>${totalMapel} Mapel</strong>
+          Kelas <strong>${escHtml(kelas)}${escHtml(rombelLabel)}</strong> &bull; Semester <strong>${escHtml(semester)}</strong> &bull; TA <strong>${escHtml(tahunAjaran)}</strong> &bull; <strong>${totalSiswa} Siswa</strong> &bull; <strong>${totalMapel} Mapel (5 Mapel / Halaman)</strong>
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -3561,84 +3772,18 @@ function renderNilaiMatriks(mapelList, siswaList, existingMap) {
     <!-- Info instruction -->
     <div style="padding:10px 16px;background:#f0fdf4;border-bottom:1px solid #bbf7d0;font-size:0.82rem;color:#166534;display:flex;align-items:center;gap:8px;">
       <span style="font-size:1.1rem;">💡</span>
-      <span>Ketik nilai siswa pada masing-masing kolom mapel. <strong>Jika nilai dikosongkan, otomatis tersimpan 0.</strong> Nilai dapat diedit kembali kapan saja lalu klik simpan lagi. Gunakan tombol panah keyboard (↑ ↓ ← →) atau Enter untuk berpindah sel cepat.</span>
+      <span>Tabel menampilkan <strong>5 mata pelajaran per halaman</strong> agar kolom Total dan Rata-rata selalu terlihat jelas. Gunakan tombol nomor halaman (1, 2, 3...) atau Prev/Next untuk berpindah mapel. <strong>Nilai kosong otomatis tersimpan 0.</strong></span>
     </div>
+
+    <!-- Top Pagination Bar -->
+    <div id="matrix-pagination-top-wrap"></div>
 
     <!-- Matrix Table Wrap -->
-    <div class="nilai-table-wrap" id="matrix-table-wrap" style="overflow-x:auto;max-height:72vh;position:relative;scroll-behavior:smooth;">
-      <table class="nilai-table" id="table-matrix-nilai" style="border-collapse:separate;border-spacing:0;font-size:0.88rem;width:100%;">
-        <thead>
-          <tr style="position:sticky;top:0;z-index:10;background:#16445f;color:#fff;">
-            <th style="width:40px;text-align:center;position:sticky;left:0;z-index:12;background:#16445f;border-right:1px solid rgba(255,255,255,0.15);">No</th>
-            <th style="width:85px;text-align:center;position:sticky;left:40px;z-index:12;background:#16445f;border-right:1px solid rgba(255,255,255,0.15);">NIS</th>
-            <th style="min-width:210px;text-align:left;position:sticky;left:125px;z-index:12;background:#16445f;box-shadow:2px 0 5px rgba(0,0,0,0.2);border-right:2px solid #cbd5e1;">Nama Siswa</th>
-            ${mapelList.map((m, colIdx) => `
-              <th style="min-width:110px;text-align:center;padding:10px 6px;vertical-align:middle;border-right:1px solid rgba(255,255,255,0.15);" title="KKM: ${m.kkm ?? 70}">
-                <div style="font-weight:700;line-height:1.2;">${escHtml(m.nama)}</div>
-                <div style="font-size:0.75rem;font-weight:600;opacity:0.85;margin-top:2px;">(KKM: ${m.kkm ?? 70})</div>
-              </th>
-            `).join('')}
-            <th style="width:75px;text-align:center;background:#0d2d3f;border-left:2px solid #e2e8f0;">Total</th>
-            <th style="width:75px;text-align:center;background:#0d2d3f;">Rata²</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${siswaList.map((s, rowIdx) => {
-            let rowTotal = 0;
-            let rowCount = 0;
-            mapelList.forEach(m => {
-              const v = _currentMatrixMap[`${s.id}_${m.id}`];
-              if (v !== '' && v !== undefined && !isNaN(parseFloat(v))) {
-                rowTotal += parseFloat(v);
-                rowCount++;
-              }
-            });
-            const rowAvg = totalMapel > 0 ? (rowTotal / totalMapel).toFixed(1) : '-';
-
-            return `
-              <tr data-siswa-id="${escHtml(s.id)}" style="background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-                <td style="text-align:center;position:sticky;left:0;z-index:5;background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">${rowIdx + 1}</td>
-                <td style="text-align:center;position:sticky;left:40px;z-index:5;background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">${escHtml(s.nis || '-')}</td>
-                <td style="position:sticky;left:125px;z-index:5;background:${rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc'};font-weight:700;color:#0f172a;white-space:nowrap;border-bottom:1px solid #e2e8f0;box-shadow:2px 0 5px rgba(0,0,0,0.08);border-right:2px solid #cbd5e1;">
-                  ${escHtml(s.nama)}
-                </td>
-                ${mapelList.map((m, colIdx) => {
-                  const key = `${s.id}_${m.id}`;
-                  const val = _currentMatrixMap[key];
-                  const kkm = m.kkm ?? 70;
-                  const isBelow = val !== '' && !isNaN(parseFloat(val)) && parseFloat(val) < kkm;
-                  return `
-                    <td style="text-align:center;padding:4px 6px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;background:${isBelow ? '#fff1f2' : ''};">
-                      <input type="number" min="0" max="100" step="0.5"
-                        class="matrix-nilai-input"
-                        id="mat_${escHtml(s.id)}_${escHtml(m.id)}"
-                        data-row="${rowIdx}"
-                        data-col="${colIdx}"
-                        data-siswa-id="${escHtml(s.id)}"
-                        data-mapel-id="${escHtml(m.id)}"
-                        value="${val !== undefined && val !== '' ? val : ''}"
-                        placeholder="0"
-                        oninput="onMatrixInput('${escHtml(s.id)}', '${escHtml(m.id)}', this.value, ${kkm})"
-                        onkeydown="onMatrixKeyDown(event, ${rowIdx}, ${colIdx})"
-                        style="width:72px;text-align:center;font-weight:700;font-size:0.95rem;padding:5px 2px;border:1.5px solid ${isBelow ? '#fda4af' : '#cbd5e1'};border-radius:6px;background:#ffffff;color:${isBelow ? '#be123c' : '#0f172a'};"
-                      />
-                    </td>
-                  `;
-                }).join('')}
-                <td id="mat_total_${escHtml(s.id)}" style="text-align:center;font-weight:800;color:#1e293b;border-left:2px solid #cbd5e1;border-bottom:1px solid #e2e8f0;background:#f1f5f9;">
-                  ${rowTotal > 0 ? rowTotal.toFixed(0) : '-'}
-                </td>
-                <td id="mat_avg_${escHtml(s.id)}" style="text-align:center;font-weight:800;color:#059669;border-bottom:1px solid #e2e8f0;background:#f1f5f9;">
-                  ${rowAvg}
-                </td>
-              </tr>
-            `;
-          }).join('')}
-        </tbody>
-      </table>
+    <div class="nilai-table-wrap" id="matrix-table-wrap" style="overflow-x:auto;max-height:68vh;position:relative;scroll-behavior:smooth;">
+      <div id="matrix-table-container"></div>
     </div>
 
-    <!-- Excel-Style Bottom Scrollbar Bar -->
+    <!-- Excel-Style Bottom Scrollbar Bar (tetap tersedia untuk navigasi geser bila layar sempit) -->
     <div class="excel-scrollbar-bar" id="excel-h-scrollbar">
       <button type="button" class="excel-scroll-btn" id="excel-scroll-left" title="Geser ke kiri (◀)">
         ◀
@@ -3651,6 +3796,9 @@ function renderNilaiMatriks(mapelList, siswaList, existingMap) {
       </button>
     </div>
 
+    <!-- Bottom Pagination Bar -->
+    <div id="matrix-pagination-bottom-wrap"></div>
+
     <!-- Big Save Bottom Bar -->
     <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#f8fafc;border-top:1px solid #e2e8f0;border-radius:0 0 var(--radius) var(--radius);flex-wrap:wrap;gap:12px;">
       <div style="font-size:0.85rem;color:#64748b;">
@@ -3662,14 +3810,14 @@ function renderNilaiMatriks(mapelList, siswaList, existingMap) {
     </div>
   `;
 
-  // Inisialisasi bilah geser gaya Excel
-  initExcelScrollbar();
+  // Render tabel dan bilah paginasi
+  renderMatrixTableContent();
 }
 
 function onMatrixInput(siswaId, mapelId, val, kkm) {
   _currentMatrixMap[`${siswaId}_${mapelId}`] = val;
 
-  // Recalculate row total & avg
+  // Recalculate row total & avg across ALL mapel in this class
   let total = 0;
   let count = 0;
   _currentMatrixMapelList.forEach(m => {
@@ -3697,7 +3845,7 @@ function onMatrixInput(siswaId, mapelId, val, kkm) {
   }
 }
 
-function onMatrixKeyDown(e, rowIdx, colIdx) {
+function onMatrixKeyDown(e, rowIdx, colIdx, pageColCount) {
   let targetRow = rowIdx;
   let targetCol = colIdx;
 
@@ -3709,19 +3857,35 @@ function onMatrixKeyDown(e, rowIdx, colIdx) {
     targetRow = Math.min(_currentMatrixSiswaList.length - 1, rowIdx + 1);
   } else if (e.key === 'ArrowLeft') {
     if (e.target.selectionStart === 0) {
-      e.preventDefault();
-      targetCol = Math.max(0, colIdx - 1);
+      if (colIdx > 0) {
+        e.preventDefault();
+        targetCol = colIdx - 1;
+      } else if (_currentMatrixMapelPage > 1) {
+        e.preventDefault();
+        setMatrixMapelPage(_currentMatrixMapelPage - 1, { focusRow: rowIdx, focusLastCol: true });
+        return;
+      }
     }
   } else if (e.key === 'ArrowRight') {
     if (e.target.selectionStart === e.target.value.length) {
-      e.preventDefault();
-      targetCol = Math.min(_currentMatrixMapelList.length - 1, colIdx + 1);
+      if (colIdx < (pageColCount || MATRIX_MAPEL_PER_PAGE) - 1) {
+        e.preventDefault();
+        targetCol = colIdx + 1;
+      } else {
+        const totalPages = getMatrixPageCount();
+        if (_currentMatrixMapelPage < totalPages) {
+          e.preventDefault();
+          setMatrixMapelPage(_currentMatrixMapelPage + 1, { focusRow: rowIdx, focusFirstCol: true });
+          return;
+        }
+      }
     }
   }
 
   if (targetRow !== rowIdx || targetCol !== colIdx) {
     const nextSiswa = _currentMatrixSiswaList[targetRow];
-    const nextMapel = _currentMatrixMapelList[targetCol];
+    const pageMapels = getMatrixCurrentPageMapels();
+    const nextMapel = pageMapels[targetCol];
     if (nextSiswa && nextMapel) {
       const nextInput = document.getElementById(`mat_${nextSiswa.id}_${nextMapel.id}`);
       if (nextInput) {
@@ -3733,6 +3897,9 @@ function onMatrixKeyDown(e, rowIdx, colIdx) {
 }
 
 async function saveNilaiMatriks() {
+  // 1. Simpan input aktif di DOM saat ini ke memori
+  syncCurrentMatrixInputsToMap();
+
   const jenjang  = State.filterNilai.jenjang || 'MI';
   const kelas    = State.filterNilai.kelas;
   const semester = State.filterNilai.semester || 'Ganjil';
@@ -3783,13 +3950,11 @@ async function saveNilaiMatriks() {
     Toast.success(`✅ Berhasil menyimpan seluruh nilai (${records.length} data nilai tersimpan)!`);
 
     // Perbarui tampilan input jika sebelumnya kosong menjadi '0'
-    siswaList.forEach(s => {
-      mapelList.forEach(m => {
-        const inp = document.getElementById(`mat_${s.id}_${m.id}`);
-        if (inp && (inp.value === '' || inp.value === undefined)) {
-          inp.value = '0';
-        }
-      });
+    const currentInputs = document.querySelectorAll('.matrix-nilai-input');
+    currentInputs.forEach(inp => {
+      if (inp.value === '' || inp.value === undefined) {
+        inp.value = '0';
+      }
     });
   } catch (err) {
     Toast.error('Gagal menyimpan nilai: ' + err.message);
